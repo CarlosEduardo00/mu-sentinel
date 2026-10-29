@@ -38,9 +38,29 @@ def captures_dir() -> Path:
     return d
 
 
-def fixtures_dir() -> Path:
-    """Suíte de prints rotulados (só existe rodando do código-fonte)."""
-    return app_dir() / "tests" / "fixtures" / "screens"
+def fixtures_dir(size: tuple[int, int] = (1280, 960)) -> Path:
+    """Suíte de prints rotulados (só existe rodando do código-fonte). Uma pasta por resolução."""
+    if tuple(size) == (1280, 960):
+        return app_dir() / "tests" / "fixtures" / "screens"
+    return app_dir() / "tests" / "fixtures" / f"screens_{size[0]}x{size[1]}"
+
+
+def parse_size(text: str) -> tuple[int, int]:
+    """'800x600' → (800, 600)."""
+    w, h = text.lower().split("x")
+    return int(w), int(h)
+
+
+def seed_profile_path(width: int, height: int) -> Path:
+    return app_dir() / "assets" / "profiles" / f"{width}x{height}.json"
+
+
+def has_profile(width: int, height: int) -> bool:
+    """Existe perfil (do usuário, semente ou padrão de fábrica) para esta resolução?"""
+    from .perception.profile import DEFAULT_PROFILES
+
+    return (profile_path(width, height).exists() or seed_profile_path(width, height).exists()
+            or (width, height) in DEFAULT_PROFILES)
 
 
 def profile_path(width: int, height: int) -> Path:
@@ -48,14 +68,12 @@ def profile_path(width: int, height: int) -> Path:
 
 
 def load_or_default_profile(width: int = 1280, height: int = 960):
-    from .perception.profile import Profile, default_profile_1280x960
+    from .perception.profile import Profile, default_profile
 
     p = profile_path(width, height)
     if p.exists():
         return Profile.load(p)
-    seed = app_dir() / "assets" / "profiles" / f"{width}x{height}.json"
+    seed = seed_profile_path(width, height)
     if seed.exists():  # perfil-semente que vem com o app
         return Profile.load(seed)
-    if (width, height) == (1280, 960):
-        return default_profile_1280x960()
-    return Profile(name=f"{width}x{height}", client_size=(width, height))
+    return default_profile(width, height) or Profile(name=f"{width}x{height}", client_size=(width, height))

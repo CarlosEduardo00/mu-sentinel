@@ -7,7 +7,76 @@ desconexão, travamento e caça parada, e avisa pelo WhatsApp.
 > permanente, inclusive de todas as contas ligadas à mesma pessoa. Os níveis 1 a 4 enviam teclas
 > ao jogo. Use por sua conta e risco.
 
-**Estado atual: Fase 0 — leitura da tela** (captura, calibração e percepção). Ainda não há alertas.
+**Estado atual: Fase 1 — monitor + alertas (nível 0 · Observador).** O app só lê a imagem das janelas e
+informações do Windows; nenhuma tecla é enviada ao jogo.
+
+## Abrir o app
+
+```powershell
+.\.venv\Scripts\pythonw.exe -m musentinel          # painel + bandeja
+.\.venv\Scripts\pythonw.exe -m musentinel --minimizado
+```
+
+Fechar a janela só esconde o painel: o monitor continua na bandeja (botão direito no ícone → Sair).
+Só abre uma instância por vez.
+
+## WhatsApp: cada um recebe no seu número
+
+Os alertas saem pelo **CallMeBot** (grátis, sem servidor). A chave do CallMeBot é ligada ao
+número que fez a ativação, então **cada pessoa ativa o próprio número** e cadastra em
+*Arquivo → Configurações → WhatsApp* (ou no link amarelo do painel):
+
+1. No celular que vai receber, salve o contato do bot. O número do bot muda de tempos em tempos:
+   confira o atual em https://www.callmebot.com/blog/free-api-whatsapp-messages/
+2. Mande para ele pelo WhatsApp: `I allow callmebot to send me messages`
+3. O bot responde com a **apikey**. No app: **Adicionar** → nome, telefone com DDI (`+55 11 99999-0000`) e a chave.
+4. **Testar**. A mensagem chega em alguns segundos.
+
+Dá para cadastrar vários números (você e um amigo recebendo os mesmos alertas) e desligar
+cada um quando quiser. Passando o app para um amigo, ele cadastra o número **dele** no PC **dele**.
+As chaves ficam no Gerenciador de Credenciais do Windows (nunca no `config.yaml`, no log ou em export).
+
+## Estados e alertas
+
+| Estado | Quando | Alerta |
+| --- | --- | --- |
+| CAÇANDO | EXP ou Hunting Time subindo | — |
+| ONLINE | HUD legível, ainda sem sinal de caça | — |
+| PARADO | sem EXP há 5 min (vindo de CAÇANDO) | aviso, 1 vez |
+| MORTO | HP 0 em 2 leituras, ou foi do spot para uma cidade sem você mexer no PC | **crítico** |
+| DESCONECTADO | a conexão do jogo com o servidor fechou, ou a internet do PC caiu | **crítico** |
+| TRAVADO | janela sem responder por 10 s ou imagem parada por 30 s | **crítico** |
+| FECHADO | o processo do jogo sumiu | **crítico** |
+| ILEGÍVEL | menu/loading/janela por cima do HUD | aviso só após 2 min, **nunca** crítico |
+
+Também avisa: Helper parou (Hunting Time parado), HP abaixo de 30%.
+
+- Um estado novo só vale após 2 ciclos seguidos iguais (ciclo de 2 s).
+- Crítico repete a cada 5 min (no máximo 3 vezes no CallMeBot) até você clicar **OK, vi o alerta**.
+- Mesmo alerta do mesmo slot: no máximo 1× a cada 5 min. Vários alertas no mesmo ciclo saem numa mensagem só.
+- 2+ slots desconectados juntos (ou internet fora): **um** alerta só, dizendo se a internet deste PC caiu.
+- Horário silencioso (opcional) vale só para o WhatsApp; críticos passam por padrão.
+- Morte "trava": renascer na cidade continua MORTO até voltar a ganhar EXP ou sair da cidade.
+
+Exemplo:
+
+```text
+[CRÍTICO] MORTE - Slot 2 "Elf Kanturu" (Kanturu 213,39)
+12:14 · HP 0/807 · estava CAÇANDO há 18 min · nível 0
+```
+
+## Energia (importante em notebook)
+
+Se o Windows suspender, o jogo e o app param juntos e nenhum alerta sai. O app impede a
+suspensão por tempo ocioso enquanto roda. Em notebooks com **Modern Standby**, apagar a tela
+ou fechar a tampa coloca o Windows em espera mesmo assim: o painel avisa. Ative
+*manter a tela ligada* em Configurações → Monitor, ou deixe "Desligar a tela" em Nunca.
+
+## Dados
+
+`%APPDATA%\MUSentinel\` (ou `data\` ao lado do .exe com `portable.flag`):
+`config.yaml` (sem segredos) · `profiles\*.json` · `events.db` (histórico, aba Eventos, exporta CSV) ·
+`logs\musentinel.log` (10 MB × 5, telefones mascarados) · `captures\prints\` (botão Print).
 
 ## Preparar o ambiente (desenvolvimento)
 
@@ -16,16 +85,16 @@ desconexão, travamento e caça parada, e avisa pelo WhatsApp.
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-## Ferramentas da Fase 0
+## Ferramentas de leitura (Fase 0)
 
 | Comando | Para quê |
 | --- | --- |
-| `.\.venv\Scripts\python.exe -m musentinel.tools.autolabel --minutos 60` | **Coleta e rotula sozinho** enquanto você joga (ver abaixo) |
+| `.\.venv\Scripts\python.exe -m musentinel.tools.autolabel --minutos 60` | **Coleta e rotula sozinho** enquanto você joga (ver abaixo); cada resolução tem a sua suíte |
 | `.\.venv\Scripts\python.exe -m musentinel.tools.contact_sheet` | Folha-resumo dos gabaritos (recorte + valor) para conferir de olho |
 | `.\.venv\Scripts\python.exe -m musentinel.gui.calibration` | Tela de calibração: captura a janela, desenha a região de cada campo, mostra a leitura ao vivo, ensina valores, salva/exporta/importa o perfil |
 | `.\.venv\Scripts\python.exe -m musentinel.tools.collect --intervalo 15` | Grava prints de todas as janelas do MU a cada 15 s (Ctrl+C para parar) |
 | `.\.venv\Scripts\python.exe -m musentinel.tools.label` | Rotulador: confere/corrige a leitura de cada print, monta a suíte de testes e ensina o perfil |
-| `.\.venv\Scripts\python.exe -m musentinel.tools.accuracy_report` | Relatório de acurácia (aprende com 1/5 dos prints, mede nos outros 4/5) |
+| `.\.venv\Scripts\python.exe -m musentinel.tools.accuracy_report --tamanho 800x600` | Relatório de acurácia (aprende com 1/5 dos prints, mede nos outros 4/5) |
 | `.\.venv\Scripts\python.exe -m musentinel.tools.capture_check --minutos 3 --apagar-monitor` | Testa a captura com janela coberta e monitor apagado |
 | `.\.venv\Scripts\python.exe -m musentinel.tools.seed_profile` | Regera o perfil-semente que vai junto com o app |
 | `.\.venv\Scripts\python.exe -m pytest` | Testes automáticos |
@@ -70,6 +139,10 @@ janela escura/clara): o leitor nunca pode afirmar um valor errado nesses casos.
 
 ## Resolução
 
-A janela do client em "800x600" ocupa **1280x960 pixels reais** nesta máquina por causa da escala
-de 125% do Windows. O perfil é por tamanho real da área da janela; outra escala do Windows = outro
-perfil (a calibração detecta e oferece criar).
+O perfil é por **tamanho real** da área da janela. O app já vem com dois:
+
+- **800x600** — client em 800x600 com a escala do Windows em 100%;
+- **1280x960** — client em 800x600 com a escala do Windows em 125%.
+
+O HUD do MU não escala proporcionalmente (orbes e barras ficam presos às bordas), então outro
+tamanho precisa de calibração própria: o painel avisa "sem perfil para LxA".

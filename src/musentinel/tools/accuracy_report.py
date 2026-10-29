@@ -127,17 +127,20 @@ def render(res: dict, n_samples: int, mode: str, n_train: int) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Mede a acurácia da leitura do HUD.")
-    ap.add_argument("--suite", type=Path, default=paths.fixtures_dir())
+    ap.add_argument("--tamanho", default="1280x960", help="resolução real da janela (ex.: 800x600)")
+    ap.add_argument("--suite", type=Path, default=None)
     ap.add_argument("--modo", choices=["holdout", "perfil"], default="holdout")
     ap.add_argument("--perfil", type=Path, default=None, help="perfil .json (padrão: o salvo 1280x960)")
     ap.add_argument("--saida", type=Path, default=paths.app_dir() / "reports")
     a = ap.parse_args(argv)
+    size = paths.parse_size(a.tamanho)
+    a.suite = a.suite or paths.fixtures_dir(size)
 
     samples = load_all(a.suite)
     if not samples:
         print(f"Nenhum print rotulado em {a.suite}")
         return 1
-    base = Profile.load(a.perfil) if a.perfil else paths.load_or_default_profile()
+    base = Profile.load(a.perfil) if a.perfil else paths.load_or_default_profile(*size)
 
     if a.modo == "holdout":
         train_set = samples[::5]

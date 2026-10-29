@@ -214,3 +214,31 @@ def default_profile_1280x960() -> Profile:
             "messages": Roi(x=60, y=690, w=360, h=75),
         },
     )
+
+
+def default_profile_800x600() -> Profile:
+    """ROIs medidas em prints reais de 800x600 (jogo em 800x600 com escala 100%).
+
+    O HUD do MU não escala proporcionalmente: orbes e barras ficam presos às bordas.
+    """
+    return Profile(
+        name="800x600",
+        client_size=(800, 600),
+        rois={
+            "map": Roi(x=38, y=3, w=90, h=18),
+            "coords": Roi(x=122, y=3, w=48, h=18),
+            "hp": Roi(x=122, y=540, w=62, h=18),
+            "exp": Roi(x=338, y=586, w=124, h=14),
+            "hunting_time": Roi(x=735, y=341, w=58, h=18),
+            "hunting_log_title": Roi(x=640, y=309, w=110, h=18),
+            "messages": Roi(x=40, y=420, w=230, h=50),
+        },
+    )
+
+
+DEFAULT_PROFILES = {(1280, 960): default_profile_1280x960, (800, 600): default_profile_800x600}
+
+
+def default_profile(width: int, height: int) -> Profile | None:
+    f = DEFAULT_PROFILES.get((width, height))
+    return f() if f else None

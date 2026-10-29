@@ -90,14 +90,26 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Coleta e rotula prints automaticamente.")
     ap.add_argument("--minutos", type=float, default=60)
     ap.add_argument("--intervalo", type=float, default=12)
-    ap.add_argument("--suite", type=Path, default=paths.fixtures_dir())
+    ap.add_argument("--suite", type=Path, default=None, help="padrão: a suíte da resolução de cada janela")
     a = ap.parse_args(argv)
 
     winapi.enable_dpi_awareness()
     cap = make_backend("auto")
-    profile = paths.load_or_default_profile()
-    reader = HudReader(profile, ocr_fallback=False)  # template puro: o OCR é o segundo leitor
-    ocr = reader.ocr
+    ocr = OcrEngine()
+    ctx: dict[tuple[int, int], tuple] = {}  # resolução → (perfil, leitor, suíte)
+    skipped: set[tuple[int, int]] = set()
+
+    def context(size: tuple[int, int]):
+        if size not in ctx:
+            if not paths.has_profile(*size):
+                if size not in skipped:
+                    skipped.add(size)
+                    print(f"janela {size[0]}x{size[1]}: sem perfil para esta resolução (calibre antes)")
+                return None
+            prof = paths.load_or_default_profile(*size)
+            # template puro: o OCR é o segundo leitor
+            ctx[size] = (prof, HudReader(prof, ocr=ocr, ocr_fallback=False), a.suite or paths.fixtures_dir(size))
+        return ctx[size]
     cities = {c.lower() for c in DEFAULT_CITIES}
     review = paths.captures_dir() / "revisar"
     states: dict[int, WinState] = {}
@@ -113,8 +125,10 @@ def main(argv: list[str] | None = None) -> int:
                 except CaptureError as e:
                     print(f"[{w.pid}] sem captura: {e}")
                     continue
-                if f.size != tuple(profile.client_size):
+                c = context(f.size)
+                if c is None:
                     continue
+                profile, reader, suite = c
                 st = states.setdefault(w.hwnd, WinState())
                 h = tiny(f.image)
                 if st.last_hash is not None and float(np.abs(h - st.last_hash).mean()) < 1.0:
@@ -181,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
                 hp = expected.get("hp") or ""
                 scene = "morto" if hp.startswith("0/") else (
                     "cidade" if str(expected.get("map", "")).lower() in cities else "cacando")
-                d = a.suite / scene
+                d = suite / scene
                 d.mkdir(parents=True, exist_ok=True)
                 png = d / f"auto_{stamp}.png"
                 # original completo fica fora do git; a suíte guarda só as regiões do HUD
@@ -206,7 +220,8 @@ def main(argv: list[str] | None = None) -> int:
         pass
     finally:
         cap.close()
-        profile.save(paths.profile_path(*profile.client_size))
+        for profile, _, _ in ctx.values():
+            profile.save(paths.profile_path(*profile.client_size))
     print(f"Fim: {counts}")
     return 0
 

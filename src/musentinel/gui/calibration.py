@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 from ..core import paths, winapi
 from ..core.capture import CaptureError, make_backend
 from ..core.perception import glyphs
-from ..core.perception.profile import FIELD_KINDS, FIELD_LABELS_PT, Profile, Roi, default_profile_1280x960
+from ..core.perception.profile import FIELD_KINDS, FIELD_LABELS_PT, Profile, Roi, default_profile
 from ..core.perception.reader import HudReader
 from .qtutil import bgr_to_pixmap
 
@@ -410,10 +410,14 @@ class CalibrationWindow(QMainWindow):
         self.statusBar().showMessage(f"Perfil {prof.name} importado. Clique em Salvar para usar.", 8000)
 
     def reset(self) -> None:
-        if QMessageBox.question(self, "Restaurar", "Voltar as regiões para o padrão 1280x960? (as fontes aprendidas ficam)") \
+        w, h = self.profile.client_size
+        d = default_profile(w, h)
+        if d is None:
+            QMessageBox.information(self, "Restaurar", f"Não há regiões de fábrica para {w}x{h}.")
+            return
+        if QMessageBox.question(self, "Restaurar", f"Voltar as regiões para o padrão {w}x{h}? (as fontes aprendidas ficam)") \
                 != QMessageBox.StandardButton.Yes:
             return
-        d = default_profile_1280x960()
         self.profile.rois = d.rois
         self.canvas.rois = self.profile.rois
         self.dirty = True

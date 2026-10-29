@@ -36,12 +36,17 @@ def row(img: np.ndarray, expected: dict, profile, name: str) -> np.ndarray:
     return np.vstack([head, r, np.full((4, r.shape[1], 3), 90, np.uint8)])
 
 
-def main() -> int:
-    samples = load_all(paths.fixtures_dir())
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Folha-resumo dos gabaritos.")
+    ap.add_argument("--tamanho", default="1280x960")
+    size = paths.parse_size(ap.parse_args(argv).tamanho)
+    samples = load_all(paths.fixtures_dir(size))
     if not samples:
         print("Suíte vazia.")
         return 1
-    profile = paths.load_or_default_profile()
+    profile = paths.load_or_default_profile(*size)
     out_dir = paths.app_dir() / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     pages = 0

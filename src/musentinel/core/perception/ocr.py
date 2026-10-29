@@ -26,6 +26,9 @@ DEFAULT_MAPS = [
 DEFAULT_CITIES = ["Lorencia", "Devias", "Noria", "Elbeland"]
 
 
+SMALL_H = 20  # recortes até esta altura (px) têm texto pequeno
+
+
 class OcrEngine:
     """Carrega o modelo só quando for usado e guarda cache por imagem."""
 
@@ -54,7 +57,12 @@ class OcrEngine:
 
             # texto escuro em fundo claro, ampliado: o reconhecedor erra menos letras
             inv = 255 - ink(img_bgr)
-            big = cv2.resize(inv, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            if img_bgr.shape[0] <= SMALL_H:
+                # texto pequeno (janela 800x600): amplia mais e dá margem
+                big = cv2.resize(inv, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+                big = cv2.copyMakeBorder(big, 8, 8, 16, 16, cv2.BORDER_CONSTANT, value=int(np.median(inv)))
+            else:
+                big = cv2.resize(inv, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
             big = cv2.cvtColor(big, cv2.COLOR_GRAY2BGR)
             res, _ = self._get()(big, use_det=False, use_cls=False, use_rec=True)
             text, score = ("", 0.0)
@@ -89,13 +97,16 @@ class OcrEngine:
         bg = int(np.median(inv))
         reads = []
         with self._lock:
-            for sc in (2, 3):
+            for sc in ((3, 4) if img_bgr.shape[0] <= SMALL_H else (2, 3)):
                 b = cv2.resize(inv, None, fx=sc, fy=sc, interpolation=cv2.INTER_CUBIC)
                 b = cv2.copyMakeBorder(b, 8, 8, 16, 16, cv2.BORDER_CONSTANT, value=bg)
                 res, _ = self._get()(cv2.cvtColor(b, cv2.COLOR_GRAY2BGR), use_det=False, use_cls=False, use_rec=True)
                 if not res:
                     return None, 0.0
-                text = "".join(c for c in str(res[0][0]) if c in charset)
+                raw = str(res[0][0])
+                if "," in charset and "." not in charset:
+                    raw = raw.replace(".", ",")  # vírgula pequena costuma sair como ponto
+                text = "".join(c for c in raw if c in charset)
                 reads.append((text, float(res[0][1])))
         (t1, s1), (t2, s2) = reads
         if not t1 or t1 != t2:
