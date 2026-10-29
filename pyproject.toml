@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "musentinel"
+version = "0.1.0"
+description = "Monitor de janelas do MU Online com alertas pelo WhatsApp"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy",
+    "opencv-python-headless",
+    "windows-capture",
+    "pywin32",
+    "psutil",
+    "pydantic>=2",
+    "PyYAML",
+    "PySide6",
+    "rapidocr-onnxruntime",
+    "keyring",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+musentinel = "musentinel.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

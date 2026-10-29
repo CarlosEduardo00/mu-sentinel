@@ -1,0 +1,10 @@
+{
+ "scene": "cacando",
+ "expected": {
+  "hp": "805/811",
+  "coords": "212,32",
+  "exp": "1140017/1837420",
+  "hunting_time": "00:45:03",
+  "map": "Aida"
+ }
+}
