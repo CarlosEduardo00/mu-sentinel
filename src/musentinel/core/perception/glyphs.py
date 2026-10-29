@@ -19,6 +19,9 @@ import numpy as np
 MATCH_MIN = 0.82  # pontuação mínima para aceitar um caractere candidato
 INK_RATIO = 0.7  # a janela precisa ter pelo menos 70% do brilho máximo do modelo
 LINE_TOL = 2  # px de tolerância vertical em relação à linha de texto
+MARGIN_MIN = 0.06  # vantagem mínima do caractere escolhido sobre o 2º colocado
+STRONG_SCORE = 0.93  # a partir daqui o casamento é quase perfeito…
+MARGIN_STRONG = 0.03  # …e basta uma vantagem menor
 
 
 def ink(img_bgr: np.ndarray) -> np.ndarray:
@@ -61,7 +64,16 @@ class GlyphFont:
     def chars(self) -> set[str]:
         return {c for c, v in self.glyphs.items() if v}
 
+    def line_height(self) -> int | None:
+        hs = [v.image.shape[0] for vs in self.glyphs.values() for v in vs]
+        if len(hs) < 5:
+            return None
+        return int(np.bincount(hs).argmax())
+
     def add(self, g: Glyph) -> None:
+        lh = self.line_height()
+        if lh is not None and abs(g.image.shape[0] - lh) > 1:
+            return  # altura fora do padrão: recorte pegou brilho do fundo
         variants = self.glyphs.setdefault(g.char, [])
         for v in variants:
             if v.image.shape == g.image.shape and _ncc(v.image, g.image) > 0.97:
@@ -107,7 +119,7 @@ def _segments(cols: np.ndarray) -> list[tuple[int, int]]:
 
 
 # largura relativa típica de cada caractere (1.0 = dígito): (mínima, máxima)
-_WIDTH = {",": (0.2, 0.8), ":": (0.2, 0.8), ".": (0.2, 0.8), "/": (0.35, 1.3)}
+_WIDTH = {",": (0.2, 0.8), ":": (0.2, 0.8), ".": (0.2, 0.8), "/": (0.35, 1.3), "1": (0.3, 0.9)}
 _DIGIT_W = (0.55, 1.45)
 
 
@@ -206,9 +218,19 @@ def learn(font: GlyphFont, roi_bgr: np.ndarray, label: str) -> bool:
     parts = split_glyphs(roi_bgr, "".join(chars))
     if parts is None:
         return False
+    # recorte com largura fora do normal = corte errado; não pode virar modelo
+    digit_w = [p.shape[1] for c, p in zip(chars, parts) if c.isdigit() and c != "1"]
+    med = float(np.median(digit_w)) if digit_w else None
+    added = False
     for c, img in zip(chars, parts):
+        if med is not None:
+            w = img.shape[1]
+            lo, hi = (_WIDTH.get(c, _DIGIT_W))
+            if not (lo * med - 1 <= w <= hi * med * 0.9 + 1):
+                continue
         font.add(Glyph(c, img))
-    return True
+        added = True
+    return added
 
 
 # ---------------------------------------------------------------- leitura
@@ -226,11 +248,24 @@ class Hit:
 
 def read_text(roi_bgr: np.ndarray, font: GlyphFont, charset: str | None = None) -> tuple[str, float]:
     """Lê o texto da ROI. Retorna (texto, confiança 0..1). Texto vazio = nada reconhecido."""
+    text, conf, _ = read_text_ex(roi_bgr, font, charset)
+    return text, conf
+
+
+def read_text_ex(
+    roi_bgr: np.ndarray, font: GlyphFont, charset: str | None = None, debug: list | None = None
+) -> tuple[str, float, tuple[int, int] | None]:
+    """Como read_text, mas também devolve a extensão horizontal (x0, x1) do texto lido.
+
+    `debug` (lista) recebe o motivo de cada recusa — usado só para diagnóstico.
+    """
+    log = debug.append if debug is not None else (lambda _m: None)
     im = ink(roi_bgr)
     if float(im.max()) - float(im.min()) < 30:  # sem contraste: não há texto
-        return "", 0.0
+        return "", 0.0, None
 
     hits: list[Hit] = []
+    scored: list[tuple[str, int, np.ndarray]] = []  # (caractere, largura, pontuação por coluna)
     for ch, variants in font.glyphs.items():
         if charset is not None and ch not in charset:
             continue
@@ -243,6 +278,7 @@ def read_text(roi_bgr: np.ndarray, font: GlyphFont, charset: str | None = None) 
             res = np.nan_to_num(res, nan=0.0)
             col = res.max(axis=0)
             rowpos = res.argmax(axis=0)
+            scored.append((ch, tw, col))
             # máximos locais por coluna
             for x in range(col.shape[0]):
                 s = float(col[x])
@@ -270,23 +306,51 @@ def read_text(roi_bgr: np.ndarray, font: GlyphFont, charset: str | None = None) 
         if ok:
             chosen.append(h)
     if not chosen:
-        return "", 0.0
+        return "", 0.0, None
     # todos os caracteres de uma leitura estão na mesma linha (modelos têm a altura da linha)
+    # compara o meio de cada caractere: modelos podem ter alturas um pouco diferentes
     strong = sorted(chosen, key=lambda h: h.score, reverse=True)[: max(1, len(chosen) // 2)]
-    line_y = int(np.median([h.y for h in strong]))
-    chosen = [h for h in chosen if abs(h.y - line_y) <= LINE_TOL]
+    line_mid = float(np.median([h.y + h.h / 2 for h in strong]))
+    for h in chosen:
+        if abs(h.y + h.h / 2 - line_mid) > LINE_TOL:
+            log(f"fora da linha: {h}")
+    chosen = [h for h in chosen if abs(h.y + h.h / 2 - line_mid) <= LINE_TOL]
+    line_y = int(min(h.y for h in chosen)) if chosen else 0
     if not chosen:
-        return "", 0.0
+        return "", 0.0, None
     chosen.sort(key=lambda h: h.x)
+    extent = (chosen[0].x, chosen[-1].x + chosen[-1].w)
     text = "".join(h.char for h in chosen)
     conf = min(h.score for h in chosen)
+
+    # Margem: se outro caractere pontua quase igual no mesmo lugar (6 × 8, 2 × 8),
+    # a leitura é ambígua e não pode sair confiante.
+    # O rival conta mesmo abaixo de MATCH_MIN: um '6' mal modelado a 0,81 contra
+    # um '8' a 0,86 é ambíguo. Só disputam caracteres de largura parecida (um '1'
+    # estreito "cabe" dentro da haste de qualquer dígito e não é rival de verdade).
+    for c in chosen:
+        lo, hi = max(0, c.x - 1), c.x + 2
+        rival = max(
+            (
+                float(col[lo:hi].max())
+                for ch, tw, col in scored
+                if ch != c.char and abs(tw - c.w) <= 2 and col[lo:hi].size
+            ),
+            default=0.0,
+        )
+        # casamento quase perfeito é confiável com margem menor
+        need = MARGIN_STRONG if c.score >= STRONG_SCORE else MARGIN_MIN
+        if c.score - rival < need:
+            log(f"ambíguo: {c.char}@{c.x} {c.score:.2f} × rival {rival:.2f}")
+            conf = min(conf, 0.5)
 
     # Toda tinta da linha precisa estar explicada por algum caractere. Se sobrar
     # um trecho com tinta sem caractere (dígito desconhecido), a leitura não vale:
     # melhor "ilegível" do que um número com um dígito a menos.
     if _uncovered_ink(im, chosen, line_y) >= UNCOVERED_MAX:
-        return text, min(conf, 0.3)
-    return text, conf
+        log(f"tinta sem caractere; escolhidos {[(h.char, h.x, h.w, round(h.score, 2)) for h in chosen]}")
+        return text, min(conf, 0.3), extent
+    return text, conf, extent
 
 
 UNCOVERED_MAX = 3  # colunas seguidas com tinta e sem caractere
@@ -296,7 +360,8 @@ def _uncovered_ink(im: np.ndarray, chosen: list[Hit], line_y: int) -> int:
     h = max(c.h for c in chosen)
     band = im[line_y : line_y + h]
     thr = max(100.0, 0.6 * float(band.max()))
-    cols = (band >= thr).any(axis=0)
+    # conta só colunas com traço de letra (respingo de magia ao fundo é baixinho)
+    cols = (band >= thr).sum(axis=0) >= max(2, int(0.3 * h))
     covered = np.zeros_like(cols)
     for c in chosen:
         covered[max(0, c.x - 1) : c.x + c.w + 1] = True

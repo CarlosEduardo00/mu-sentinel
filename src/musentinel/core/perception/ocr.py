@@ -63,6 +63,45 @@ class OcrEngine:
             self._remember(key, (text, score))
             return text, score
 
+    def read_number(self, img_bgr: np.ndarray, charset: str) -> tuple[str | None, float]:
+        """Lê um campo numérico em duas escalas; só aceita se as duas concordarem.
+
+        Serve de segundo leitor, independente do template matching, para
+        rotular prints automaticamente.
+        """
+        from .glyphs import ink
+
+        im = ink(img_bgr)
+        if "/" in charset:
+            # "61212 / 1852300": a barra entre espaços às vezes vira '7' no OCR.
+            # Lê cada número separado e junta com '/'.
+            words = _words(im)
+            if len(words) == 3 and words[1][1] - words[1][0] <= 6:
+                digits = charset.replace("/", "")
+                (a0, a1), _, (b0, b1) = words
+                left, s1 = self.read_number(img_bgr[:, max(0, a0 - 2) : a1 + 2], digits)
+                right, s2 = self.read_number(img_bgr[:, max(0, b0 - 2) : b1 + 2], digits)
+                if left and right:
+                    return f"{left}/{right}", min(s1, s2)
+                return None, 0.0
+
+        inv = 255 - im
+        bg = int(np.median(inv))
+        reads = []
+        with self._lock:
+            for sc in (2, 3):
+                b = cv2.resize(inv, None, fx=sc, fy=sc, interpolation=cv2.INTER_CUBIC)
+                b = cv2.copyMakeBorder(b, 8, 8, 16, 16, cv2.BORDER_CONSTANT, value=bg)
+                res, _ = self._get()(cv2.cvtColor(b, cv2.COLOR_GRAY2BGR), use_det=False, use_cls=False, use_rec=True)
+                if not res:
+                    return None, 0.0
+                text = "".join(c for c in str(res[0][0]) if c in charset)
+                reads.append((text, float(res[0][1])))
+        (t1, s1), (t2, s2) = reads
+        if not t1 or t1 != t2:
+            return None, 0.0
+        return t1, min(s1, s2)
+
     def read_block(self, img_bgr: np.ndarray) -> list[tuple[str, float]]:
         """Várias linhas (com detecção), de cima para baixo."""
         with self._lock:
@@ -76,6 +115,24 @@ class OcrEngine:
         self._cache[key] = val
         if len(self._cache) > self._cache_size:
             self._cache.popitem(last=False)
+
+
+def _words(im: np.ndarray, min_gap: int = 3) -> list[tuple[int, int]]:
+    """Trechos de texto separados por espaços (>= min_gap colunas sem tinta)."""
+    thr = max(50.0, 0.3 * float(im.max()))
+    cols = (im >= thr).any(axis=0)
+    words: list[list[int]] = []
+    gap = min_gap
+    for x, on in enumerate(cols):
+        if on:
+            if gap >= min_gap:
+                words.append([x, x + 1])
+            else:
+                words[-1][1] = x + 1
+            gap = 0
+        else:
+            gap += 1
+    return [(a, b) for a, b in words]
 
 
 def _key(img: np.ndarray) -> bytes:

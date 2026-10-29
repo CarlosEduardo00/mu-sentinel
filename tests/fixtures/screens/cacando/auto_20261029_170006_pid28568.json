@@ -1,0 +1,16 @@
+{
+ "scene": "cacando",
+ "expected": {
+  "hp": "813/813",
+  "coords": "211,33",
+  "exp": "922573/1852300",
+  "map": "Aida"
+ },
+ "auto": {
+  "hp": "template = OCR",
+  "coords": "template = OCR",
+  "exp": "template = OCR",
+  "hunting_time": "OCR '04:43:13' incoerente com a leitura anterior",
+  "map": "mapa (conf 1.00)"
+ }
+}

@@ -14,6 +14,12 @@ from .ocr import DEFAULT_MAPS, OcrEngine, match_name
 from .profile import CHARSETS, FIELD_KINDS, Profile
 
 DEFAULT_FIELDS = ("hp", "coords", "exp", "hunting_time", "map")
+UNKNOWN_CHAR_CONF = 0.3  # confiança que o template devolve quando sobra tinta sem caractere
+
+
+def _is_subsequence(part: str, whole: str) -> bool:
+    it = iter(whole)
+    return all(c in it for c in part)
 
 
 @dataclass
@@ -41,7 +47,9 @@ class HudReader:
         maps: list[str] | None = None,
         min_confidence: float = 0.85,
         panel_match_min: float = 0.6,
+        ocr_fallback: bool = True,
     ):
+        self.ocr_fallback = ocr_fallback
         self.profile = profile
         self.ocr = ocr or OcrEngine()
         self.maps = maps or list(DEFAULT_MAPS)
@@ -78,11 +86,16 @@ class HudReader:
             font = self.profile.reading_font(name)
             if not font.glyphs:
                 return unreadable("sem fonte calibrada")
-            text, conf = glyphs.read_text(crop, font, CHARSETS.get(name))
+            text, conf, extent = glyphs.read_text_ex(crop, font, CHARSETS.get(name))
             if not text:
                 return unreadable("", 0.0)
-            r = PARSERS[name](text, conf)
-            return self._gate(r)
+            if not self._in_place(name, extent):
+                # texto fora do alinhamento de sempre: provavelmente meio coberto por um menu
+                return unreadable(text, min(conf, 0.4))
+            r = self._gate(PARSERS[name](text, conf))
+            if not r.ok and self.ocr_fallback and conf <= UNKNOWN_CHAR_CONF:
+                r = self._ocr_rescue(name, crop, text) or r
+            return r
 
         if name == "map":
             ref_name, ref_score = self._match_map_ref(crop)
@@ -109,6 +122,29 @@ class HudReader:
             return FieldReading(self.panel_open(image), 1.0, "", "ok")
 
         return unreadable("tipo de campo desconhecido")
+
+    def _ocr_rescue(self, name: str, crop: np.ndarray, partial: str) -> FieldReading | None:
+        """O template achou tinta que não reconhece (dígito ainda não aprendido).
+
+        Lê com OCR em duas escalas e só aceita se: as duas concordam, o valor é
+        válido e contém, na ordem, tudo o que o template já tinha lido.
+        """
+        text, score = self.ocr.read_number(crop, CHARSETS[name])
+        if not text or score < 0.9 or not _is_subsequence(partial, text):
+            return None
+        r = PARSERS[name](text, score * 0.95)
+        if not r.ok:
+            return None
+        return FieldReading(r.value, r.confidence, f"{text} (OCR)", "ok")
+
+    def _in_place(self, name: str, extent: tuple[int, int] | None) -> bool:
+        anchor = self.profile.anchor(name)
+        if anchor is None or extent is None:
+            return True
+        side, pos, tol = anchor
+        x0, x1 = extent
+        v = {"left": x0, "right": x1, "center": (x0 + x1) / 2}[side]
+        return abs(v - pos) <= tol
 
     def _match_map_ref(self, crop: np.ndarray) -> tuple[str | None, float]:
         refs = self._map_refs_cache()

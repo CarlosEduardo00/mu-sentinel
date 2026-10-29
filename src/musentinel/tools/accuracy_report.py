@@ -69,6 +69,21 @@ def evaluate(profile: Profile, samples: list[Sample]) -> dict:
     }
 
 
+def evaluate_occlusion(profile: Profile, samples: list[Sample]) -> tuple[int, list[str]]:
+    """Casos sintéticos de HUD coberto. Retorna (casos, erros confiantes)."""
+    from ..core.perception.occlusion import cases
+
+    reader = HudReader(profile)
+    n, bad = 0, []
+    for i, s in enumerate(samples):
+        for desc, name, img in cases(s.image(), profile, s.expected, seed=i):
+            n += 1
+            got = reader.read_field(img, name)
+            if got.ok and not judge(name, s.expected[name], got)[0]:
+                bad.append(f"{s.png.name} · {desc}: leu {got.raw!r} (conf {got.confidence:.2f})")
+    return n, bad
+
+
 def render(res: dict, n_samples: int, mode: str, n_train: int) -> str:
     acc = res["accuracy"]
     lines = [
@@ -94,6 +109,16 @@ def render(res: dict, n_samples: int, mode: str, n_train: int) -> str:
     lines += ["", "## Por cena", "", "| Cena | Acertos | Total | % |", "| --- | --- | --- | --- |"]
     for sc, (h, t) in sorted(res["per_scene"].items()):
         lines.append(f"| {sc} | {h} | {t} | {h / t:.1%} |")
+    if "occlusion" in res:
+        n, bad = res["occlusion"]
+        lines += [
+            "",
+            "## HUD coberto (casos sintéticos)",
+            "",
+            f"- {n} casos (campo inteiro, metade esquerda e metade direita cobertos por janela escura/clara)",
+            f"- **Erros confiantes: {len(bad)}** (meta: 0)",
+        ]
+        lines += [f"  - {b}" for b in bad[:50]]
     if res["errors"]:
         lines += ["", f"## Erros ({len(res['errors'])})", ""]
         lines += [f"- {e}" for e in res["errors"][:300]]
@@ -123,13 +148,14 @@ def main(argv: list[str] | None = None) -> int:
         train_set, test_set, prof = [], samples, base
 
     res = evaluate(prof, test_set)
+    res["occlusion"] = evaluate_occlusion(prof, test_set[::4])
     text = render(res, len(test_set), a.modo, len(train_set))
     a.saida.mkdir(parents=True, exist_ok=True)
     out = a.saida / f"acuracia_{datetime.now():%Y%m%d_%H%M%S}.md"
     out.write_text(text, encoding="utf-8")
     print(text)
     print(f"Relatório salvo em {out}")
-    return 0 if res["accuracy"] >= TARGET else 2
+    return 0 if res["accuracy"] >= TARGET and not res["occlusion"][1] and not res["confident_wrong"] else 2
 
 
 if __name__ == "__main__":

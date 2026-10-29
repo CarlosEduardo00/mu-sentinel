@@ -67,6 +67,25 @@ class Sample:
         return Sample(png, data.get("scene", "outro"), data.get("expected", {}))
 
 
+# regiões que a suíte usa (mensagens do sistema ficam de fora: grandes e sem teste)
+TESTED_ROIS = ("hp", "coords", "exp", "hunting_time", "map", "hunting_log_title")
+
+
+def mask_to_rois(img: np.ndarray, rois, pad: int = 6) -> np.ndarray:
+    """Mantém só as regiões do HUD (com folga) e apaga o resto.
+
+    Os testes só leem essas regiões; o resto preto comprime quase a zero e a
+    suíte cabe no git (1280x960 inteiro = ~2 MB por print; mascarado = poucos KB).
+    """
+    out = np.zeros_like(img)
+    h, w = img.shape[:2]
+    for r in rois:
+        y0, y1 = max(0, r.y - pad), min(h, r.y + r.h + pad)
+        x0, x1 = max(0, r.x - pad), min(w, r.x + r.w + pad)
+        out[y0:y1, x0:x1] = img[y0:y1, x0:x1]
+    return out
+
+
 def load_all(root: Path) -> list[Sample]:
     if not root.exists():
         return []

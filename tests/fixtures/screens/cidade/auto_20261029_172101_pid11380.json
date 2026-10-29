@@ -1,0 +1,17 @@
+{
+ "scene": "cidade",
+ "expected": {
+  "hp": "208/208",
+  "coords": "49,225",
+  "exp": "7026/79300",
+  "hunting_time": null,
+  "map": "Elbeland"
+ },
+ "auto": {
+  "hp": "template = OCR",
+  "coords": "template = OCR",
+  "exp": "OCR + coerente no tempo",
+  "hunting_time": "ausente (painel fechado, OCR vazio)",
+  "map": "mapa (conf 1.00)"
+ }
+}

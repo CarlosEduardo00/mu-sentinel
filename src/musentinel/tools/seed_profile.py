@@ -19,7 +19,10 @@ def main() -> int:
     if not samples:
         print("Suíte vazia.")
         return 1
-    prof = train(default_profile_1280x960(), samples, passes=3)
+    # Mesmo esquema do relatório "holdout": aprende com 1 a cada 5 prints. Treinar com
+    # todos acumula variantes ruins e PIORA a leitura; assim a acurácia medida nos
+    # outros 4/5 vale para este perfil.
+    prof = train(default_profile_1280x960(), samples[::5])
     out = paths.app_dir() / "assets" / "profiles" / "1280x960.json"
     prof.save(out)
     missing = {f: "".join(sorted(prof.missing_chars(f))) for f in ("hp", "coords", "exp", "hunting_time")}

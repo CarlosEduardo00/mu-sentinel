@@ -33,13 +33,17 @@ def learn_sample(profile: Profile, reader: HudReader, image: np.ndarray, expecte
         want = want.replace(" ", "")
         if any(c not in CHARSETS[name] for c in want):
             continue
+        crop = profile.rois[name].crop(image)
         got = reader.read_field(image, name)
-        if judge(name, want, got)[0]:
-            continue
-        font = profile.font(name)
-        if glyphs.learn(font, profile.rois[name].crop(image), want):
-            profile.store_font(name, font)
-            learned.append(name)
+        if not judge(name, want, got)[0]:
+            font = profile.font(name)
+            if glyphs.learn(font, crop, want):
+                profile.store_font(name, font)
+                learned.append(name)
+        # registra onde o texto certo aparece (âncora contra leitura de número meio coberto)
+        text, _, extent = glyphs.read_text_ex(crop, profile.reading_font(name), CHARSETS[name])
+        if extent is not None and text == want:
+            profile.record_extent(name, extent)
 
     want_map = expected.get("map")
     if want_map not in (None, UNREADABLE) and "map" in profile.rois:
@@ -51,7 +55,7 @@ def learn_sample(profile: Profile, reader: HudReader, image: np.ndarray, expecte
 
 
 def train(profile: Profile, samples: list[Sample], passes: int = 2) -> Profile:
-    reader = HudReader(profile)
+    reader = HudReader(profile, ocr_fallback=False)  # mede só o template, para aprender o que falta
     for _ in range(passes):
         for s in samples:
             learn_sample(profile, reader, s.image(), s.expected)

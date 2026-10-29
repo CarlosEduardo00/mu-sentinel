@@ -20,6 +20,8 @@ desconexão, travamento e caça parada, e avisa pelo WhatsApp.
 
 | Comando | Para quê |
 | --- | --- |
+| `.\.venv\Scripts\python.exe -m musentinel.tools.autolabel --minutos 60` | **Coleta e rotula sozinho** enquanto você joga (ver abaixo) |
+| `.\.venv\Scripts\python.exe -m musentinel.tools.contact_sheet` | Folha-resumo dos gabaritos (recorte + valor) para conferir de olho |
 | `.\.venv\Scripts\python.exe -m musentinel.gui.calibration` | Tela de calibração: captura a janela, desenha a região de cada campo, mostra a leitura ao vivo, ensina valores, salva/exporta/importa o perfil |
 | `.\.venv\Scripts\python.exe -m musentinel.tools.collect --intervalo 15` | Grava prints de todas as janelas do MU a cada 15 s (Ctrl+C para parar) |
 | `.\.venv\Scripts\python.exe -m musentinel.tools.label` | Rotulador: confere/corrige a leitura de cada print, monta a suíte de testes e ensina o perfil |
@@ -28,7 +30,24 @@ desconexão, travamento e caça parada, e avisa pelo WhatsApp.
 | `.\.venv\Scripts\python.exe -m musentinel.tools.seed_profile` | Regera o perfil-semente que vai junto com o app |
 | `.\.venv\Scripts\python.exe -m pytest` | Testes automáticos |
 
-### No rotulador
+### Rotulagem automática
+
+Ninguém precisa digitar 200 valores. O `autolabel` captura as janelas e lê cada número
+por dois métodos independentes — o leitor por template do app e o OCR em duas escalas.
+Um campo vira gabarito quando os dois dão **exatamente** o mesmo valor, ou quando só o OCR
+leu e o valor é coerente com a leitura anterior (Hunting Time avançou o mesmo que o
+relógio; HP máximo igual; EXP não caiu). Se os dois leem valores diferentes, o print vai
+para `%APPDATA%\MUSentinel\captures\revisar\` — o único caso que pede olho humano
+(dá para abrir no rotulador manual com `--pasta`).
+
+Os prints da suíte guardam só as regiões do HUD (o resto fica preto) para caber no git;
+os originais completos ficam em `%APPDATA%\MUSentinel\captures\originais\`.
+
+Morte, menu aberto e loading quase não aparecem numa coleta normal; por isso o relatório
+também testa **HUD coberto** com casos sintéticos (campo inteiro ou metade coberto por
+janela escura/clara): o leitor nunca pode afirmar um valor errado nesses casos.
+
+### No rotulador manual (opcional)
 
 - Cada campo vem preenchido com o que o app leu; corrija só o que estiver errado e aperte **Enter**.
 - `?` = ilegível (menu por cima, loading…) · `-` = ausente (painel Instant Hunting Log fechado).

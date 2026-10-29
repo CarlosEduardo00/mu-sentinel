@@ -68,7 +68,7 @@ class Labeler(QMainWindow):
         self.idx = 0
         self.fixtures = fixtures
         self.profile = paths.load_or_default_profile()
-        self.reader = HudReader(self.profile)
+        self.reader = HudReader(self.profile, ocr_fallback=False)  # aprende o que o template não conhece
         self.cities = {"lorencia", "devias", "noria", "elbeland"}
         self.image: np.ndarray | None = None
         self.done = 0

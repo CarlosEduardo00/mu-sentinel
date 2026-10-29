@@ -20,14 +20,16 @@ def render(text: str, bg: tuple[int, int, int] = (20, 20, 160), seed: int = 0) -
 @pytest.fixture
 def font() -> G.GlyphFont:
     f = G.GlyphFont()
-    for i, t in enumerate(["0123/4567", "89/105", "6,7:8", "4321/9876"]):
+    for i, t in enumerate(["0123/4567", "89/105", "6,7:8", "4321/9876", "08:80:06", "3080/5090"]):
         assert G.learn(f, render(t, seed=i), t)
     return f
 
 
 @pytest.mark.parametrize("text", ["805/811", "212,32", "1140017/1837420", "00:45:03", "0/811"])
 def test_reads_unseen_combinations(font, text):
-    got, conf = G.read_text(render(text, seed=99), font)
+    # como no app: cada campo só aceita os próprios caracteres
+    charset = "0123456789" + "".join(c for c in "/,:" if c in text)
+    got, conf = G.read_text(render(text, seed=99), font, charset)
     assert got == text
     assert conf >= 0.85
 

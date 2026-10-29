@@ -71,6 +71,8 @@ class Profile(BaseModel):
     rois: dict[str, Roi] = Field(default_factory=dict)
     fonts: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
     refs: dict[str, str] = Field(default_factory=dict)  # campo -> PNG base64
+    # posição do texto em leituras confirmadas: campo -> [[x0, x1], ...]
+    extents: dict[str, list[tuple[int, int]]] = Field(default_factory=dict)
     notes: str = ""
     updated_at: str = ""
 
@@ -122,6 +124,33 @@ class Profile(BaseModel):
         ok, png = cv2.imencode(".png", img)
         assert ok
         self.refs[field] = base64.b64encode(png.tobytes()).decode()
+
+    # ------------------------------------------------------------ âncora de posição
+    def record_extent(self, field: str, extent: tuple[int, int], keep: int = 60) -> None:
+        lst = self.extents.setdefault(field, [])
+        e = (int(extent[0]), int(extent[1]))
+        if e in (tuple(x) for x in lst):
+            return  # janela parada repete a mesma posição: não deve pesar mais
+        lst.append(e)
+        del lst[:-keep]
+
+    def anchor(self, field: str) -> tuple[str, float, float] | None:
+        """Como o texto do campo se alinha: ('left'|'center'|'right', posição, tolerância).
+
+        O HUD alinha cada número sempre do mesmo jeito (centralizado no orbe,
+        à direita no painel…). Escolhe o lado que menos varia entre leituras
+        confirmadas. None = ainda poucos exemplos.
+        """
+        lst = self.extents.get(field, [])
+        if len(lst) < 5:
+            return None
+        a = np.array(lst, dtype=float)
+        widths = a[:, 1] - a[:, 0]
+        if len(set(widths.tolist())) < 3 or widths.max() - widths.min() < 6:
+            return None  # textos sempre do mesmo tamanho: não dá para saber o alinhamento
+        sides = {"left": a[:, 0], "center": a.mean(axis=1), "right": a[:, 1]}
+        name, vals = min(sides.items(), key=lambda kv: kv[1].std())
+        return name, float(np.median(vals)), max(3.0, 3 * float(vals.std()))
 
     # ------------------------------------------------------------ mapas
     def map_refs(self) -> dict[str, np.ndarray]:
