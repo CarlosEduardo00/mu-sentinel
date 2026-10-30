@@ -264,3 +264,16 @@ def test_discovery_closed_slot_reserved_in_same_session(tmp_path):
     d.refresh()  # slot 1 fechou (fica FECHADO no painel)
     wins.append(win(3, 300))  # outra janela abriu em outro lugar: não rouba o slot 1
     assert d.refresh()[3].pid == 300
+
+
+def test_discovery_owner_hidden_keeps_same_slot(tmp_path):
+    rects = {1: (0, 0, 800, 600), 2: (900, 0, 800, 600)}
+    wins = [win(1, 100), win(2, 200)]
+    d = Discovery(lister=lambda: wins, rect_of=lambda w: rects[w.hwnd], store=None)
+    d.refresh()
+    wins[:] = [win(1, 0), win(2, 0)]  # anti-cheat passou a esconder o processo dono
+    m = d.refresh()
+    assert {s: (b.hwnd, b.pid) for s, b in m.items()} == {1: (1, 0), 2: (2, 0)}
+    wins[:] = [win(1, 100), win(2, 200)]  # voltou a mostrar
+    m = d.refresh()
+    assert {s: b.pid for s, b in m.items()} == {1: 100, 2: 200}

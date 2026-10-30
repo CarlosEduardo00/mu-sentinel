@@ -210,9 +210,9 @@ def list_windows(title: str = "MU", process: str | None = "main.exe",
                  stats: dict | None = None) -> list[WindowInfo]:
     """Janelas visíveis de nível superior com o título exato (e o processo, se informado).
 
-    `stats["sem_dono"]` recebe quantas janelas com o título certo o Windows não disse de
-    qual processo são. Isso acontece quando o anti-cheat do jogo (GameGuard) restringe este
-    programa. O app não tenta contornar: só conta, para avisar o usuário.
+    Janela cujo processo o Windows não informou volta com pid=0 ("dono desconhecido") e conta
+    em `stats["sem_dono"]`. Isso acontece quando o anti-cheat do jogo (GameGuard) restringe este
+    programa. O app não tenta descobrir o processo por outro caminho: monitora só pela janela.
     """
     found: list[int] = []
     enum_stats = {"total": 0, "erros": 0}
@@ -238,11 +238,10 @@ def list_windows(title: str = "MU", process: str | None = "main.exe",
     hidden = 0
     for hwnd in found:
         pid = get_pid(hwnd)
+        pname = process_name(pid) if pid else ""
         if not pid:
             hidden += 1
-            continue
-        pname = process_name(pid)
-        if process and pname and pname.lower() != process.lower():
+        elif process and pname and pname.lower() != process.lower():
             log.debug("janela %s ignorada: processo %r (PID %s) não é %r", hwnd, pname, pid, process)
             continue
         r = wt.RECT()
@@ -255,7 +254,7 @@ def list_windows(title: str = "MU", process: str | None = "main.exe",
                 process_name=pname,
                 client_size=(r.right, r.bottom),
                 minimized=is_minimized(hwnd),
-                elevated=is_process_elevated(pid),
+                elevated=is_process_elevated(pid) if pid else None,
             )
         )
     if stats is not None:

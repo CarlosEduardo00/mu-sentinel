@@ -504,9 +504,10 @@ class MainWindow(QMainWindow):
             msgs.append("O WhatsApp ainda não está configurado: os alertas só aparecem neste PC. "
                         "<a href='whatsapp'>Cadastrar meu WhatsApp</a>")
         if self.engine.protection_blocked:
-            msgs.append(f"<b>O anti-cheat do jogo (GameGuard) está escondendo {self.engine.protection_blocked} "
-                        "janela(s) do MU deste programa.</b> O MU Sentinel não tenta contornar a proteção do jogo, "
-                        "então essas janelas não estão sendo monitoradas.")
+            msgs.append(f"<b>Monitoramento limitado em {self.engine.protection_blocked} janela(s):</b> o anti-cheat do "
+                        "jogo (GameGuard) não deixa este programa ver de qual processo elas são. O MU Sentinel não "
+                        "contorna isso: segue pela imagem (morte, caça parada, travamento, janela fechada), mas não "
+                        "checa a conexão com o servidor. Queda da internet deste PC continua sendo detectada.")
         if self.engine.internet.ok is False:
             msgs.append("<b>Sem internet</b>: os alertas pelo WhatsApp ficam na fila até a conexão voltar.")
         for w in self.engine.power_warnings:

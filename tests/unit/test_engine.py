@@ -29,9 +29,9 @@ class Game:
         self.hidden_by_anticheat = False
 
     def windows(self):
-        if self.hidden_by_anticheat:
-            return []
-        return [WindowInfo(i, 1000 + i, "MU", "main.exe", (800, 600), False, False)
+        # com o anti-cheat escondendo o processo, a janela continua listada, mas com pid=0
+        return [WindowInfo(i, 0 if self.hidden_by_anticheat else 1000 + i, "MU",
+                           "" if self.hidden_by_anticheat else "main.exe", (800, 600), False, False)
                 for i, a in self.alive.items() if a]
 
 
@@ -80,6 +80,7 @@ def rig(monkeypatch):
         monkeypatch.setattr(health, "session_locked", lambda: False)
         monkeypatch.setattr(health, "user_idle_s", lambda: 9999)
         monkeypatch.setattr(health, "internet_ok", lambda timeout=2.0: True)
+        monkeypatch.setattr(engine_mod.winapi, "is_window", lambda hwnd: game.alive.get(hwnd, False))
         clock = {"t": 1_000_000.0}
         monkeypatch.setattr(engine_mod.time, "time", lambda: clock["t"])
         cfg = Config()
@@ -180,13 +181,33 @@ def test_snapshots_published(rig):
     assert snaps[0].hp == (800, 811) and snaps[0].map == "Kanturu" and snaps[0].thumb is not None
 
 
-def test_anticheat_hiding_windows_is_warning_not_closed(rig):
+def test_anticheat_hiding_owner_keeps_monitoring_by_window(rig):
     game, e, ext, run, clock = rig(2)
     run(5)
     game.hidden_by_anticheat = True
-    e.discovery._stats["sem_dono"] = 2  # o Windows não informa o dono das janelas
+    e.discovery._stats["sem_dono"] = 2  # o Windows não informa o processo dono das janelas
     run(6)
-    assert not any("CLIENT FECHADO" in m for m in ext.sent)
-    blocked = [m for m in ext.sent if "BLOQUEADO PELO ANTI-CHEAT" in m]
-    assert len(blocked) == 1 and blocked[0].startswith("[AVISO]")
-    assert all(e.slots[i].tracker.view.state == State.ILEGIVEL for i in (1, 2))
+    # segue monitorando pela imagem: sem "client reaberto", sem FECHADO, ainda caçando
+    assert not any("FECHADO" in m for m in ext.sent)
+    limited = [m for m in ext.sent if "MONITORAMENTO LIMITADO" in m]
+    assert len(limited) == 1 and limited[0].startswith("[AVISO]")
+    assert all(e.slots[i].tracker.view.state == State.CACANDO for i in (1, 2))
+    assert e.slots[1].pid == 0 and e.slots[1].connected is None
+    # morte continua sendo detectada pela imagem
+    game.hp[1] = (0, 811)
+    run(5)
+    assert any("MORTE - Slot 1" in m for m in ext.sent)
+    # janela fechada de verdade (não existe mais) vira FECHADO
+    game.alive[2] = False
+    run(3)
+    assert any("CLIENT FECHADO - Slot 2" in m for m in ext.sent)
+
+
+def test_anticheat_hiding_owner_with_internet_down(rig):
+    game, e, ext, run, clock = rig(2)
+    game.hidden_by_anticheat = True
+    e.discovery._stats["sem_dono"] = 2
+    run(5)
+    e.internet.ok = False
+    run(3)
+    assert any("SLOTS CAÍRAM" in m for m in ext.sent)

@@ -76,6 +76,8 @@ class Discovery:
 
         for slot, b in list(self.active.items()):
             w = by_hwnd.pop(b.hwnd, None)
+            if w is not None and w.pid != b.pid and 0 in (w.pid, b.pid):
+                b.pid = w.pid  # mesma janela; só o dono ficou (in)visível para este programa
             if w is None or w.pid != b.pid:
                 self.vacant[slot] = self.active.pop(slot)
                 if w is not None:

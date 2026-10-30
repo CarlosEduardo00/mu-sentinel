@@ -28,9 +28,10 @@ from .state_machine import CRITICAL, Observation, SlotTracker, State
 
 log = logging.getLogger(__name__)
 THUMB_W = 320
-PROTECTION_TITLE = "MONITORAMENTO BLOQUEADO PELO ANTI-CHEAT"
+PROTECTION_TITLE = "MONITORAMENTO LIMITADO PELO ANTI-CHEAT"
 PROTECTION_NOTE = ("o anti-cheat do jogo (GameGuard) não deixa o MU Sentinel ver de qual processo são as "
-                   "janelas do MU; o app não contorna essa proteção, então estas janelas não estão sendo monitoradas")
+                   "janelas do MU; o app segue pela imagem da janela, mas sem checar a conexão com o servidor "
+                   "(queda da internet deste PC continua sendo detectada)")
 
 
 @dataclass
@@ -202,23 +203,34 @@ class Engine:
 
     def _observe(self, s: _Slot, b, now, conns, locked, user_active, internet_down) -> Observation:
         if b is None:
-            if self.protection_blocked:
-                # a janela não sumiu: o anti-cheat só não deixa este programa ver de quem ela é
-                return Observation(ts=now, capture_ok=False, connected=s.connected, note=PROTECTION_NOTE)
+            if s.pid == 0:
+                # dono desconhecido: só dá para saber se a janela ainda existe
+                if s.hwnd and winapi.is_window(s.hwnd):
+                    return Observation(ts=now, capture_ok=False, connected=s.connected,
+                                       note="a janela do jogo existe, mas não está acessível agora")
+                return Observation(ts=now, process_alive=False, capture_ok=False, note="a janela do jogo fechou")
             if s.pid and health.process_alive(s.pid, self.cfg.monitor.process_name or None):
                 return Observation(ts=now, capture_ok=False, connected=s.connected,
                                    note="janela do jogo sumiu, mas o processo continua aberto")
             return Observation(ts=now, process_alive=False, capture_ok=False, note="janela fechada")
-        if s.pid != b.pid:
+        if s.hwnd == b.hwnd and s.pid != b.pid and 0 in (s.pid, b.pid):
+            # mesma janela; o anti-cheat passou a esconder (ou mostrar) o processo dono
+            s.pid = b.pid
+            s.conn.reset()
+        elif s.pid != b.pid or s.hwnd != b.hwnd:
             if s.pid is not None:
-                self.bus.emit("info", f"client reaberto (PID {s.pid} → {b.pid})", slot=s.n)
+                self.bus.emit("info", "client reaberto" + (f" (PID {s.pid} → {b.pid})" if s.pid and b.pid else ""),
+                              slot=s.n)
             s.tracker.reset_process()
             s.conn.reset()
             s.frames.reset()
             s.pid, s.hwnd = b.pid, b.hwnd
         if b.info is not None and b.info.elevated and not winapi.current_process_elevated():
             self.elevated_game = True
-        alive = health.process_alive(b.pid, self.cfg.monitor.process_name or None)
+        if b.pid:
+            alive = health.process_alive(b.pid, self.cfg.monitor.process_name or None)
+        else:
+            alive = winapi.is_window(b.hwnd)  # modo limitado: a janela existir é o que dá para checar
         hung = health.window_hung(b.hwnd) if alive else False
         o = Observation(ts=now, process_alive=alive, hung=hung, locked=locked, user_active=user_active)
         try:
@@ -264,8 +276,8 @@ class Engine:
             if o.note:
                 log.info("slot %s: %s", s.n, o.note)
         online_evidence = o.hp is not None and o.hp[0] > 0
-        connected = s.conn.update(conns.get(b.pid, set()), online_evidence)
-        if internet_down and s.conn.reference:
+        connected = s.conn.update(conns.get(b.pid, set()), online_evidence) if b.pid else None
+        if internet_down and (s.conn.reference or not b.pid):
             connected = False
         o.connected = connected
         s.connected = connected
@@ -298,11 +310,11 @@ class Engine:
 
     def _check_protection(self, hidden: int) -> None:
         if hidden and not self.protection_blocked:
-            self.bus.emit("alerta", f"{PROTECTION_TITLE}: {hidden} janela(s) do jogo escondida(s)", severity="aviso")
+            self.bus.emit("alerta", f"{PROTECTION_TITLE}: {hidden} janela(s) sem processo visível", severity="aviso")
             self.alerts.submit(Alert(None, "BLOQUEIO_ANTICHEAT", "aviso", PROTECTION_TITLE,
                                      detail=f"{hidden} janela(s) · {PROTECTION_NOTE}"))
         elif not hidden and self.protection_blocked:
-            self.bus.emit("info", "o anti-cheat voltou a deixar o MU Sentinel ver as janelas do jogo")
+            self.bus.emit("info", "o anti-cheat voltou a deixar o MU Sentinel ver os processos do jogo")
         self.protection_blocked = hidden
 
     # ------------------------------------------------------------------ sinais → alertas
