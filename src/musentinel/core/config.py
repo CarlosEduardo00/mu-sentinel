@@ -34,6 +34,17 @@ def normalize_phone(phone: str) -> str:
     return re.sub(r"\D", "", phone or "")
 
 
+SHOP_WORD = "loja"
+
+
+def is_shop_name(name: str) -> bool:
+    """'Loja', 'loja 2', 'Loja do Elf' → True."""
+    import unicodedata
+
+    plain = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
+    return re.search(rf"\b{SHOP_WORD}\b", plain) is not None
+
+
 def mask_phone(phone: str) -> str:
     """Telefone mascarado para log/tela: '+55•••••••9999'."""
     d = normalize_phone(phone)
@@ -87,6 +98,17 @@ class TelegramConfig(_Model):
     chats: list[TelegramChat] = Field(default_factory=list, alias="conversas")
     min_interval_s: float = Field(1.0, alias="intervalo_min_s", ge=0.5)
     send_images: bool = Field(True, alias="enviar_print")
+    # pedidos pelo Telegram (/status, /inventario, /ok...), só das conversas da lista
+    commands: bool = Field(True, alias="aceitar_comandos")
+
+
+class PanelsConfig(_Model):
+    """Painéis que o usuário deixa abertos no jogo (C, I, Instant Hunting Log, Gremory Case na Loja)."""
+
+    enabled: bool = Field(True, alias="acompanhar")
+    warn_closed: bool = Field(True, alias="avisar_quando_fechar")
+    interval_s: float = Field(30, alias="intervalo_s", ge=10, le=600)
+    shop_interval_s: float = Field(10, alias="intervalo_loja_s", ge=5, le=120)
 
 
 class WindowsNotifyConfig(_Model):
@@ -154,6 +176,7 @@ class Config(_Model):
     thresholds: Thresholds = Field(default_factory=Thresholds, alias="limiares")
     alerts: AlertsConfig = Field(default_factory=AlertsConfig, alias="alertas")
     notifiers: NotifiersConfig = Field(default_factory=NotifiersConfig, alias="notificadores")
+    panels: PanelsConfig = Field(default_factory=PanelsConfig, alias="paineis")
     slots: dict[int, SlotConfig] = Field(default_factory=dict)
 
     def slot(self, n: int) -> SlotConfig:
@@ -167,6 +190,11 @@ class Config(_Model):
 
     def is_city(self, map_name: str | None) -> bool:
         return bool(map_name) and map_name.strip().lower() in {c.lower() for c in self.cities}
+
+    def is_shop(self, n: int) -> bool:
+        """Slot do personagem que vende: o nome tem "Loja" (acompanha o Gremory Case, sem alertas de caça)."""
+        s = self.slots.get(n)
+        return bool(s and is_shop_name(s.name))
 
     # ------------------------------------------------------------------
     def to_yaml(self) -> str:

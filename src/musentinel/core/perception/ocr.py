@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -27,6 +28,38 @@ DEFAULT_CITIES = ["Lorencia", "Devias", "Noria", "Elbeland"]
 
 
 SMALL_H = 20  # recortes até esta altura (px) têm texto pequeno
+
+
+@dataclass(frozen=True)
+class TextBox:
+    """Trecho de texto achado na imagem (coordenadas em pixels da imagem)."""
+
+    x0: int
+    y0: int
+    x1: int
+    y1: int
+    text: str
+    score: float
+
+    @property
+    def cx(self) -> float:
+        return (self.x0 + self.x1) / 2
+
+    @property
+    def cy(self) -> float:
+        return (self.y0 + self.y1) / 2
+
+    @property
+    def h(self) -> int:
+        return self.y1 - self.y0
+
+    @property
+    def key(self) -> str:
+        """Texto só com letras e dígitos, minúsculo ('Instant Hunting Log' → 'instanthuntinglog')."""
+        return "".join(c for c in self.text.lower() if c.isalnum())
+
+    def shifted(self, dx: int, dy: int) -> "TextBox":
+        return TextBox(self.x0 + dx, self.y0 + dy, self.x1 + dx, self.y1 + dy, self.text, self.score)
 
 
 class OcrEngine:
@@ -112,6 +145,18 @@ class OcrEngine:
         if not t1 or t1 != t2:
             return None, 0.0
         return t1, min(s1, s2)
+
+    def detect(self, img_bgr: np.ndarray) -> list[TextBox]:
+        """Todos os trechos de texto da imagem, com a posição (detecção + leitura)."""
+        with self._lock:
+            res, _ = self._get()(img_bgr)
+        out = []
+        for box, text, score in res or []:
+            xs = [float(p[0]) for p in box]
+            ys = [float(p[1]) for p in box]
+            out.append(TextBox(int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)), str(text).strip(),
+                               float(score)))
+        return out
 
     def read_block(self, img_bgr: np.ndarray) -> list[tuple[str, float]]:
         """Várias linhas (com detecção), de cima para baixo."""

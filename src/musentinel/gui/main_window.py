@@ -161,7 +161,8 @@ class SlotCard(QFrame):
         h.addLayout(v, 1)
 
     def update_from(self, s: SlotSnapshot, active_alert: bool) -> None:
-        self.title.setText(f"Slot {s.slot}" if s.name == f"Slot {s.slot}" else f"Slot {s.slot} · {s.name}")
+        title = f"Slot {s.slot}" if s.name == f"Slot {s.slot}" else f"Slot {s.slot} · {s.name}"
+        self.title.setText(title + ("  🏪" if s.shop else ""))
         color = STATE_COLOR.get(s.state, "#555")
         self.state.setStyleSheet(f"font-size:14px; font-weight:bold; color:white; padding:3px 8px;"
                                  f" border-radius:4px; background:{color};")
@@ -177,6 +178,10 @@ class SlotCard(QFrame):
             exph = f"{fmt_big(s.exp_per_h)}/h ({s.exp_pct_per_h:.1f}%/h)".replace(".", ",", 1)
         ht = "—" if s.hunting_time is None else time.strftime("%H:%M:%S", time.gmtime(s.hunting_time))
         conn = {True: "conectado", False: "<b style='color:#c62828'>sem conexão</b>", None: "—"}[s.connected]
+        short = {"personagem": "C", "inventario": "I", "caca": "Caçada", "loja": "Gremory"}
+        panels_text = ", ".join(short[k] for k in s.panels) or "—"
+        if s.shop and "loja" not in s.panels:
+            panels_text += " <b style='color:#b26a00'>(abra o Gremory Case)</b>"
         self.info.setText(
             f"<table cellspacing=2>"
             f"<tr><td>HP</td><td><b>{hp}</b></td></tr>"
@@ -185,7 +190,7 @@ class SlotCard(QFrame):
             f"<tr><td>Hunting Time</td><td>{ht}</td></tr>"
             f"<tr><td>Servidor</td><td>{conn}</td></tr>"
             f"<tr><td>Último evento</td><td>{s.last_event or '—'}</td></tr>"
-            f"<tr><td>Nível</td><td>0 · Observador</td></tr>"
+            f"<tr><td>Painéis</td><td>{panels_text}</td></tr>"
             f"</table>")
         self.note.setText(s.note)
         if s.thumb is not None:

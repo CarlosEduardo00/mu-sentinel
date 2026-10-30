@@ -29,6 +29,10 @@ Outra pessoa quer receber os alertas <i>deste</i> PC? Ela abre o mesmo link do b
 busca as conversas de novo. Cada amigo, no PC dele, cria o próprio bot.
 """
 
+COMMANDS_HELP = ("Pedidos pelo celular (botões no bot ou digitando): /status, /print 2, /inventario, /personagem, "
+                 "/cacada, /loja, /ok (para de repetir o alerta), /pausar 60, /retomar. Os painéis precisam "
+                 "estar abertos no jogo: o app só olha a tela, não aperta teclas.")
+
 
 class _Bridge(QObject):
     done = Signal(object, object)  # (resultado, erro)
@@ -102,6 +106,14 @@ class TelegramPanel(QWidget):
         self.images = QCheckBox("Mandar o print da janela junto nos alertas críticos")
         self.images.setChecked(tg.send_images)
         v.addWidget(self.images)
+        self.commands = QCheckBox("Aceitar pedidos pelo Telegram (só das conversas da lista)")
+        self.commands.setChecked(tg.commands)
+        self.commands.setToolTip(COMMANDS_HELP)
+        v.addWidget(self.commands)
+        cmd_lbl = QLabel(COMMANDS_HELP)
+        cmd_lbl.setWordWrap(True)
+        cmd_lbl.setStyleSheet("color:#888;")
+        v.addWidget(cmd_lbl)
         self.msg = QLabel("")
         self.msg.setWordWrap(True)
         v.addWidget(self.msg)
@@ -220,6 +232,7 @@ class TelegramPanel(QWidget):
         tg.bot_username = self.bot_username
         tg.chats = self.chats
         tg.send_images = self.images.isChecked()
+        tg.commands = self.commands.isChecked()
 
     def configured(self) -> bool:
         return secrets.has_secret(TELEGRAM_TOKEN_KEY) and any(c.enabled for c in self.chats)

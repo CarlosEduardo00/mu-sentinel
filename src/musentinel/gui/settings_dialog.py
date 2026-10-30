@@ -37,6 +37,19 @@ Para um amigo receber também: ele faz os passos 1–3 no celular dele e você a
 <p style="color:#b26a00"><b>Atenção:</b> o CallMeBot às vezes fica sem vagas ("The bot is currently full") e não entrega a chave. Enquanto isso, use o <b>Telegram</b>.</p>
 """
 
+SHOP_HINT = ("🏪 <b>Personagem que vende?</b> Dê o nome <b>Loja</b> à janela dele (ex.: <i>Loja</i> ou "
+             "<i>Loja 2</i>). Nessa janela o MU Sentinel acompanha o <b>Gremory Case</b> aberto na aba "
+             "<b>Personal Shop</b> e avisa no celular quando algo for vendido. Na Loja não há alertas de caça "
+             "parada.")
+
+
+def shop_hint_label() -> QLabel:
+    lbl = QLabel(SHOP_HINT)
+    lbl.setWordWrap(True)
+    lbl.setTextFormat(Qt.TextFormat.RichText)
+    lbl.setStyleSheet("border:1px solid #b26a00; border-radius:4px; padding:6px;")
+    return lbl
+
 
 class _TestBridge(QObject):
     done = Signal(bool, str)
@@ -297,6 +310,13 @@ class SettingsDialog(QDialog):
         self.m_autostart = QCheckBox("Iniciar com o Windows (minimizado na bandeja)")
         self.m_autostart.setChecked(autostart.is_enabled())
         f.addRow(self.m_autostart)
+        p = self.cfg.panels
+        self.p_on = QCheckBox("Acompanhar os painéis abertos no jogo (C, I, Instant Hunting Log, Gremory Case)")
+        self.p_on.setChecked(p.enabled)
+        self.p_warn = QCheckBox("Avisar quando um desses painéis fechar sozinho (relog, morte, teleporte)")
+        self.p_warn.setChecked(p.warn_closed)
+        f.addRow(self.p_on)
+        f.addRow(self.p_warn)
         return w
 
     def _tab_thresholds(self) -> QWidget:
@@ -357,6 +377,7 @@ class SettingsDialog(QDialog):
         w = QWidget()
         v = QVBoxLayout(w)
         v.addWidget(QLabel("Nome de cada slot (aparece nos alertas)."))
+        v.addWidget(shop_hint_label())
         slots = sorted(self.cfg.slots.items())
         self.stable = QTableWidget(len(slots), 2)
         self.stable.setHorizontalHeaderLabels(["Slot", "Nome"])
@@ -384,6 +405,8 @@ class SettingsDialog(QDialog):
             c.monitor.confirm_cycles = self.m_confirm.value()
             c.monitor.keep_awake = self.m_awake.isChecked()
             c.monitor.keep_display_on = self.m_display.isChecked()
+            c.panels.enabled = self.p_on.isChecked()
+            c.panels.warn_closed = self.p_warn.isChecked()
             t = c.thresholds
             t.hp_low_pct, t.death_hp_reads = self.t_hp.value(), self.t_hp0.value()
             t.exp_stall_min, t.helper_stall_s = self.t_exp.value(), self.t_helper.value()

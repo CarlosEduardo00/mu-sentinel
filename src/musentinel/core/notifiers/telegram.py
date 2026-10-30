@@ -1,13 +1,15 @@
-"""Telegram via Bot API oficial: texto e print da janela, só ida (comandos não são lidos).
+"""Telegram via Bot API oficial: alertas (texto e print) e pedidos pelo celular.
 
 Cada pessoa cria o próprio bot no @BotFather e cola o token no app; quem tocar em
 "Iniciar" no bot aparece em "Buscar conversas" e pode ser marcado para receber.
+Pedidos (/status, /inventario...) só são atendidos para as conversas da lista do app.
 O token vai para o Gerenciador de Credenciais e nunca aparece em log ou mensagem de erro
 (a URL da API contém o token, por isso erros mostram só o tipo da exceção).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import queue
 import threading
@@ -66,6 +68,9 @@ class TelegramApi:
         code = int(body.get("error_code") or status)
         if code == 401 or code == 404:
             raise TelegramError("token", "token do bot inválido (confira o que o @BotFather mandou)")
+        if code == 409:
+            raise TelegramError("retry", "outro programa (ou outra cópia do MU Sentinel) está lendo as mensagens "
+                                         "deste bot", 10)
         if code == 429:
             ra = float((body.get("parameters") or {}).get("retry_after") or 5)
             raise TelegramError("retry", "muitas mensagens seguidas; aguardando o Telegram", ra)
@@ -82,31 +87,76 @@ class TelegramApi:
     def get_me(self) -> dict:
         return self.call("getMe")
 
+    def get_updates(self, offset: int | None = None, timeout: int = 0) -> list[dict]:
+        data = {"timeout": timeout, "allowed_updates": '["message","my_chat_member"]'}
+        if offset is not None:
+            data["offset"] = offset
+        return self.call("getUpdates", data) or []
+
     def find_chats(self) -> list[tuple[int, str]]:
         """Conversas que mandaram algo ao bot (ex.: tocaram em Iniciar) nas últimas 24 h."""
-        updates = self.call("getUpdates", {"timeout": 0, "allowed_updates": '["message","my_chat_member"]'}) or []
-        found: dict[int, str] = {}
-        for u in updates:
-            msg = u.get("message") or u.get("my_chat_member") or {}
-            chat = msg.get("chat") or {}
-            if "id" not in chat:
-                continue
-            if chat.get("type") == "private":
-                name = " ".join(x for x in (chat.get("first_name"), chat.get("last_name")) if x)
-                if chat.get("username"):
-                    name = f"{name} (@{chat['username']})".strip()
-            else:
-                name = chat.get("title") or "grupo"
-            found[int(chat["id"])] = name or str(chat["id"])
+        if listener_running():  # a escuta de comandos já consome as mensagens: usa o que ela viu
+            return seen_chats()
+        found = remember_chats(self.get_updates())
         return list(found.items())
 
-    def send_message(self, chat_id: int, text: str) -> None:
-        self.call("sendMessage", {"chat_id": str(chat_id), "text": text[:MAX_TEXT],
-                                  "disable_web_page_preview": "true"})
+    def send_message(self, chat_id: int, text: str, keyboard: list[list[str]] | None = None) -> None:
+        data = {"chat_id": str(chat_id), "text": text[:MAX_TEXT], "disable_web_page_preview": "true"}
+        if keyboard:
+            data["reply_markup"] = _keyboard_json(keyboard)
+        self.call("sendMessage", data)
 
-    def send_photo(self, chat_id: int, jpeg: bytes, caption: str) -> None:
-        self.call("sendPhoto", {"chat_id": str(chat_id), "caption": caption[:MAX_CAPTION]},
-                  {"photo": ("print.jpg", jpeg, "image/jpeg")})
+    def send_photo(self, chat_id: int, jpeg: bytes, caption: str, keyboard: list[list[str]] | None = None) -> None:
+        data = {"chat_id": str(chat_id), "caption": caption[:MAX_CAPTION]}
+        if keyboard:
+            data["reply_markup"] = _keyboard_json(keyboard)
+        self.call("sendPhoto", data, {"photo": ("print.jpg", jpeg, "image/jpeg")})
+
+    def set_commands(self, commands: list[tuple[str, str]]) -> None:
+        self.call("setMyCommands", {"commands": json.dumps(
+            [{"command": c, "description": d} for c, d in commands], ensure_ascii=False)})
+
+
+def _keyboard_json(rows: list[list[str]]) -> str:
+    return json.dumps({"keyboard": [[{"text": t} for t in row] for row in rows],
+                       "resize_keyboard": True, "is_persistent": True}, ensure_ascii=False)
+
+
+# conversas vistas pelo bot nesta execução (para "Buscar conversas" enquanto a escuta está ligada)
+_seen_lock = threading.Lock()
+_SEEN: dict[int, str] = {}
+_LISTENERS = 0
+
+
+def chat_name(chat: dict) -> str:
+    if chat.get("type") == "private":
+        name = " ".join(x for x in (chat.get("first_name"), chat.get("last_name")) if x)
+        if chat.get("username"):
+            name = f"{name} (@{chat['username']})".strip()
+    else:
+        name = chat.get("title") or "grupo"
+    return name or str(chat.get("id"))
+
+
+def remember_chats(updates: list[dict]) -> dict[int, str]:
+    found: dict[int, str] = {}
+    for u in updates:
+        msg = u.get("message") or u.get("my_chat_member") or {}
+        chat = msg.get("chat") or {}
+        if "id" in chat:
+            found[int(chat["id"])] = chat_name(chat)
+    with _seen_lock:
+        _SEEN.update(found)
+    return found
+
+
+def seen_chats() -> list[tuple[int, str]]:
+    with _seen_lock:
+        return list(_SEEN.items())
+
+
+def listener_running() -> bool:
+    return _LISTENERS > 0
 
 
 @dataclass
@@ -157,7 +207,7 @@ class TelegramNotifier:
         for c in self.chats:
             self._q.put(_Job(c, text, image if self.send_images else None, created=now))
 
-    def start_inbound(self, on_message) -> None:  # comandos pelo Telegram não fazem parte desta versão
+    def start_inbound(self, on_message) -> None:  # os pedidos são lidos pelo TelegramCommandListener
         return None
 
     def status(self) -> NotifierStatus:
@@ -242,6 +292,143 @@ class TelegramNotifier:
         self._status = NotifierStatus(True, "enviado " + time.strftime("%H:%M", time.localtime(self._clock())))
         log.info("Telegram: enviado para %s%s", who, f" (atrasado {late:.0f} s)" if late > 30 else "")
         return True
+
+
+NOT_ALLOWED_TEXT = ("Oi! Este bot avisa sobre o MU de outra pessoa. Se você deve receber os alertas, peça para "
+                    "o dono clicar em \"Buscar conversas\" no MU Sentinel.")
+
+# (texto do pedido) -> respostas [(texto, jpeg ou None)]
+Handler = Callable[[str], list[tuple[str, bytes | None]]]
+
+
+class TelegramCommandListener:
+    """Lê as mensagens mandadas ao bot (long polling) e responde aos pedidos de quem está na lista.
+
+    - Só atende conversas cujo ID está em `allowed` (as cadastradas no app).
+    - Mensagens antigas (enviadas com o app fechado) são ignoradas: o pedido já perdeu o sentido.
+    - O token só é lido do Gerenciador de Credenciais; erros nunca mostram a URL.
+    """
+
+    POLL_S = 20
+    MAX_AGE_S = 120
+
+    def __init__(self, allowed: set[int], handler: Handler, keyboard: list[list[str]] | None = None,
+                 commands: list[tuple[str, str]] | None = None, http_post: HttpPost | None = None,
+                 token_lookup: Callable[[str], str | None] = get_secret, clock: Callable[[], float] = time.time,
+                 start: bool = True) -> None:
+        self.allowed = set(allowed)
+        self.handler = handler
+        self.keyboard = keyboard
+        self.commands = commands
+        self._post = http_post
+        self._token = token_lookup
+        self._clock = clock
+        self._offset: int | None = None
+        self._greeted: set[int] = set()
+        self._stop = threading.Event()
+        self.status = NotifierStatus(True, "aguardando pedidos")
+        self._thread = threading.Thread(target=self._run, name="telegram-comandos", daemon=True)
+        self._counted = False
+        if start:
+            self._mark(True)
+            self._thread.start()
+
+    def _mark(self, on: bool) -> None:
+        global _LISTENERS
+        with _seen_lock:
+            if on and not self._counted:
+                _LISTENERS += 1
+                self._counted = True
+            elif not on and self._counted:
+                _LISTENERS -= 1
+                self._counted = False
+
+    def close(self) -> None:
+        self._stop.set()
+        self._mark(False)
+
+    # ------------------------------------------------------------------
+    def _api(self) -> TelegramApi | None:
+        token = self._token(TELEGRAM_TOKEN_KEY)
+        return TelegramApi(token, self._post) if token else None
+
+    def _run(self) -> None:
+        delay_i = 0
+        announced = False
+        while not self._stop.is_set():
+            api = self._api()
+            if api is None:
+                self.status = NotifierStatus(False, "token do bot não cadastrado")
+                self._stop.wait(30)
+                continue
+            if not announced and self.commands:
+                try:
+                    api.set_commands(self.commands)  # menu "/" do bot
+                except TelegramError:
+                    pass
+                announced = True
+            try:
+                self.poll_once(api, timeout=self.POLL_S)
+                delay_i = 0
+            except TelegramError as exc:
+                self.status = NotifierStatus(False, exc.description)
+                wait = 60 if exc.kind == "token" else (exc.retry_after or BACKOFF_S[min(delay_i, len(BACKOFF_S) - 1)])
+                delay_i += 1
+                log.warning("Telegram (pedidos): %s; tentando de novo em %.0f s", exc.description, wait)
+                self._stop.wait(wait)
+
+    def poll_once(self, api: TelegramApi, timeout: int = 0) -> int:
+        """Busca as mensagens novas e responde. Retorna quantos pedidos atendeu."""
+        updates = api.get_updates(self._offset, timeout)
+        if self._stop.is_set():
+            return 0
+        self.status = NotifierStatus(True, "aguardando pedidos")
+        remember_chats(updates)
+        served = 0
+        for u in updates:
+            self._offset = int(u["update_id"]) + 1
+            msg = u.get("message") or {}
+            chat_id = (msg.get("chat") or {}).get("id")
+            text = (msg.get("text") or "").strip()
+            if chat_id is None or not text:
+                continue
+            chat_id = int(chat_id)
+            if chat_id not in self.allowed:
+                if text.startswith("/start") and chat_id not in self._greeted:
+                    self._greeted.add(chat_id)
+                    self._reply(api, chat_id, [(NOT_ALLOWED_TEXT, None)], keyboard=False)
+                log.info("Telegram: pedido ignorado de uma conversa fora da lista")
+                continue
+            if self._clock() - float(msg.get("date") or 0) > self.MAX_AGE_S:
+                continue  # mandado com o app fechado
+            log.info("Telegram: pedido recebido: %s", text[:40])
+            try:
+                replies = self.handler(text)
+            except Exception:
+                log.exception("Telegram: erro ao atender pedido")
+                replies = [("Não consegui atender o pedido (erro interno; detalhes no log do app).", None)]
+            self._reply(api, chat_id, replies)
+            served += 1
+        return served
+
+    def _reply(self, api: TelegramApi, chat_id: int, replies, keyboard: bool = True) -> None:
+        for i, (text, image) in enumerate(replies):
+            kb = self.keyboard if keyboard and i == len(replies) - 1 else None
+            for attempt in range(2):
+                try:
+                    if image:
+                        api.send_photo(chat_id, image, text, kb)
+                        if len(text) > MAX_CAPTION:  # legenda longa: manda o resto como texto
+                            api.send_message(chat_id, text[MAX_CAPTION:], kb)
+                    else:
+                        api.send_message(chat_id, text, kb)
+                    break
+                except TelegramError as exc:
+                    if exc.kind == "retry" and exc.retry_after and attempt == 0:
+                        self._stop.wait(min(exc.retry_after, 30))
+                        continue
+                    log.warning("Telegram: resposta não enviada (%s)", exc.description)
+                    break
 
 
 def send_test(token: str, chat_id: int, text: str, http_post: HttpPost | None = None) -> tuple[bool, str]:

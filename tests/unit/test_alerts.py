@@ -38,7 +38,7 @@ def test_format_matches_spec():
     lines = ext.sent[0].splitlines()
     assert lines[0] == '[CRÍTICO] MORTE - Slot 2 "Elf" (Kanturu 213,39)'
     assert lines[1] == "12:00 · HP 0/807 · nível 0"
-    assert lines[2] == "Responda: print 2 · ok"
+    assert lines[2] == "Responda /ok para parar de repetir · /print 2 para ver a tela"
 
 
 def test_no_reply_line_without_inbound():

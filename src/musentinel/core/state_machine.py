@@ -221,7 +221,7 @@ class SlotTracker:
             self._last_map = o.map
             if (prev is not None and o.map != prev and self.cfg.is_city(o.map)
                     and not self.cfg.is_city(prev) and self.view.state == State.CACANDO
-                    and not o.user_active):
+                    and not o.user_active and not self.cfg.is_shop(self.slot)):
                 if not self._dead:
                     self._dead_reason = f"foi de {prev} para {o.map} sem comando"
                 self._dead = True
@@ -261,6 +261,8 @@ class SlotTracker:
             return State.ILEGIVEL
         self._unreadable_since = None
         self._unreadable_warned = False
+        if self.cfg.is_shop(self.slot):
+            return State.ONLINE  # personagem da loja fica parado na cidade de propósito
         ref = self._last_exp_rise or self._started or o.ts
         if o.ts - ref >= th.exp_stall_min * 60:
             return State.PARADO  # sem EXP há N min, mesmo com o Hunting Time contando
@@ -276,7 +278,7 @@ class SlotTracker:
         out: list[Signal] = []
         online = raw in (State.CACANDO, State.PARADO, State.ONLINE)
         # Helper parou: Hunting Time subia e parou (painel aberto e legível)
-        if o.hunting_time is not None and online:
+        if o.hunting_time is not None and online and not self.cfg.is_shop(self.slot):
             running = self._last_ht_rise is not None and o.ts - self._last_ht_rise < th.helper_stall_s
             if running:
                 self._helper_was_running = True

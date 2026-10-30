@@ -164,3 +164,95 @@ def test_config_roundtrip_has_no_token():
     y = c.to_yaml()
     assert "conversas:" in y and "id: 111" in y and TOKEN not in y
     assert Config.from_yaml(y).notifiers.telegram.chats[1].chat_id == 222
+
+
+# ---------------------------------------------------------------------- pedidos pelo Telegram
+def _upd(uid, chat_id, text, date, name="Ana"):
+    return {"update_id": uid, "message": {"chat": {"id": chat_id, "type": "private", "first_name": name},
+                                          "text": text, "date": date}}
+
+
+def _listener(post, handler, clock, allowed=(111,)):
+    from musentinel.core.notifiers.telegram import TelegramCommandListener
+
+    return TelegramCommandListener(set(allowed), handler, [["📊 Status"]], http_post=post,
+                                   token_lookup=lambda k: TOKEN if k == TELEGRAM_TOKEN_KEY else None,
+                                   clock=clock, start=False)
+
+
+def test_listener_answers_only_listed_chats():
+    from musentinel.core.notifiers.telegram import NOT_ALLOWED_TEXT, TelegramApi
+
+    clk = Clock()
+    asked = []
+
+    def handler(text):
+        asked.append(text)
+        return [("legenda", b"\xff\xd8jpg"), ("texto", None)]
+
+    updates = [_upd(5, 111, "/inventario 2", clk()), _upd(6, 999, "/start", clk(), "Estranho"),
+               _upd(7, 999, "/print", clk(), "Estranho"), _upd(8, 999, "/start", clk(), "Estranho")]
+    post = FakePost([(200, {"ok": True, "result": updates})])
+    lst = _listener(post, handler, clk)
+    served = lst.poll_once(TelegramApi(TOKEN, post))
+    assert served == 1 and asked == ["/inventario 2"]  # o 999 não está na lista
+    sent = [(u.rsplit("/", 1)[1], d) for u, d, _ in post.calls[1:]]
+    assert [m for m, _ in sent] == ["sendPhoto", "sendMessage", "sendMessage"]
+    assert sent[0][1]["chat_id"] == "111" and "reply_markup" not in sent[0][1]
+    assert sent[1][1]["text"] == "texto" and "Status" in sent[1][1]["reply_markup"]  # teclado na última resposta
+    assert sent[2][1]["chat_id"] == "999" and sent[2][1]["text"] == NOT_ALLOWED_TEXT  # saudação só uma vez
+    assert lst._offset == 9
+
+
+def test_listener_skips_old_messages_and_keeps_offset():
+    from musentinel.core.notifiers.telegram import TelegramApi
+
+    clk = Clock()
+    post = FakePost([(200, {"ok": True, "result": [_upd(40, 111, "/status", clk() - 3600)]})])
+    lst = _listener(post, lambda t: [("x", None)], clk)
+    assert lst.poll_once(TelegramApi(TOKEN, post)) == 0 and lst._offset == 41
+    post.responses = [(200, {"ok": True, "result": []})]
+    lst.poll_once(TelegramApi(TOKEN, post))
+    assert post.calls[-1][1]["offset"] == 41
+
+
+def test_listener_handler_error_still_replies():
+    from musentinel.core.notifiers.telegram import TelegramApi
+
+    clk = Clock()
+
+    def boom(text):
+        raise RuntimeError("falhou")
+
+    post = FakePost([(200, {"ok": True, "result": [_upd(1, 111, "/status", clk())]})])
+    _listener(post, boom, clk).poll_once(TelegramApi(TOKEN, post))
+    assert "Não consegui" in post.calls[-1][1]["text"]
+
+
+def test_find_chats_uses_listener_memory_while_running():
+    from musentinel.core.notifiers import telegram as tg
+
+    clk = Clock()
+    post = FakePost([(200, {"ok": True, "result": [_upd(1, 333, "/start", clk(), "Amigo")]})])
+    lst = _listener(post, lambda t: [], clk)
+    lst._mark(True)
+    try:
+        lst.poll_once(tg.TelegramApi(TOKEN, post))
+        calls = len(post.calls)
+        found = dict(tg.TelegramApi(TOKEN, post).find_chats())
+        assert found.get(333) == "Amigo" and len(post.calls) == calls  # não chamou getUpdates de novo
+    finally:
+        lst.close()
+    assert not tg.listener_running()
+
+
+def test_conflict_409_is_explained():
+    from musentinel.core.notifiers.telegram import TelegramApi, TelegramError
+
+    post = FakePost([(409, {"ok": False, "error_code": 409, "description": "Conflict: terminated by other getUpdates"})])
+    try:
+        TelegramApi(TOKEN, post).get_updates()
+    except TelegramError as exc:
+        assert exc.kind == "retry" and "outra cópia" in exc.description
+    else:
+        raise AssertionError("esperava erro")

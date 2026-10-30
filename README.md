@@ -50,7 +50,24 @@ Antes de distribuir, teste o zip numa máquina/VM sem Python.
 Bot API oficial do Telegram, grátis e sem fila de espera. Em *Configurações → Telegram*: criar um bot no
 @BotFather (`/newbot`), colar o token e **Verificar**, tocar em **Iniciar** no link do bot, **Buscar
 conversas** e **Testar**. Nos alertas críticos vai junto o print da janela. O token fica no Gerenciador
-de Credenciais. Comandos pelo Telegram não fazem parte desta versão (só ida).
+de Credenciais.
+
+**Pedidos pelo celular** (`core/remote.py`, `TelegramCommandListener`): `/status`, `/print N`,
+`/inventario N`, `/personagem N`, `/cacada N`, `/loja`, `/ok`, `/pausar M`, `/retomar`, também como botões
+no bot. Só conversas da lista do app são atendidas; mensagens enviadas com o app fechado são ignoradas.
+Nada disso mexe no jogo: os comandos leem a imagem e controlam os alertas do próprio app.
+
+## Painéis abertos no jogo e Loja
+
+O usuário deixa abertos Personagem (C), Inventário (I), Instant Hunting Log e, na janela chamada **Loja**,
+o Gremory Case na aba Personal Shop. `core/perception/panels.py` acha cada painel pelo título (OCR da tela
+inteira, em qualquer posição; escala pela altura do texto) e lê: atributos e pontos do C; grade 8x8 e Zen do
+inventário (nomes dos itens não aparecem, só ícones); tempo, EXP/s e abates da caçada; contador `N / 150` e
+aba selecionada (pela cor) do Gremory Case. `core/panels.py` confere a cada 30 s (Loja: 10 s), sem OCR, se o
+título continua no lugar; procura de novo na tela inteira quando some ou a cada 5 min. Avisos: painel que
+fechou sozinho (com o usuário longe do PC), Gremory fora da aba Personal Shop, e **VENDA NA LOJA** quando o
+contador sobe (confirmado em 2 leituras; retirada de itens só reajusta a base). A Loja não tem alertas de caça
+parada nem a regra de morte por ida à cidade.
 
 ### WhatsApp (CallMeBot)
 

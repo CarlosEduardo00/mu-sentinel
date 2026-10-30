@@ -63,9 +63,45 @@ Dá para refazer depois em *Arquivo → Assistente de configuração*.
 3. Abra o link do seu bot que aparece no app e toque em **Iniciar**.
 4. Clique em **Buscar conversas**, deixe marcado quem recebe e clique em **Testar**.
 
-Nos alertas críticos vai junto o print da janela. Outra pessoa também pode receber os alertas do seu PC:
+Nos alertas críticos vai junto o print da janela, e o alerta repete até você responder **/ok** (ou tocar em
+"✅ OK, vi o alerta"). Outra pessoa também pode receber os alertas do seu PC:
 ela abre o link do seu bot, toca em Iniciar, e você busca as conversas de novo. O token fica guardado no
 Gerenciador de Credenciais do Windows, não em arquivo.
+
+## Pedidos pelo Telegram
+
+Com o Telegram ativo, dá para **pedir** coisas pelo celular (botões que aparecem no bot, ou digitando).
+Só as conversas da lista do app são atendidas:
+
+| Pedido | O que volta |
+| --- | --- |
+| `/status` | Estado de cada slot, mapa, HP, EXP/h e painéis abertos |
+| `/print 2` | Print da janela do slot 2 (sem número: todas) |
+| `/inventario 2` | Imagem do Inventário (I), espaços ocupados/livres, Zen e o que mudou desde o último pedido |
+| `/personagem 2` | Imagem da janela C: classe, level, pontos a distribuir, atributos |
+| `/cacada 2` | Instant Hunting Log: tempo de caça, EXP por segundo e por hora, abates, dano |
+| `/loja` | Gremory Case da janela **Loja** (quantos itens entraram) |
+| `/ok` | Para de repetir os alertas críticos |
+| `/pausar 60` · `/retomar` | Pausa os alertas por 60 min / volta |
+
+O MU Sentinel **não aperta teclas** no jogo: os painéis precisam estar **abertos por você** (C, I, a janela de
+caça). Ele acha cada painel pelo título, em qualquer lugar da tela, então pode arrumar as janelas do jeito que
+couber. Os nomes dos itens do inventário não aparecem na tela (são só ícones): por isso vai a imagem, mais a
+contagem de espaços e o Zen.
+
+Se um painel que estava aberto **fechar sozinho** (relog, morte, teleporte) com você longe do PC, chega um
+aviso para abrir de novo. Fechou com você mexendo no PC: o app entende que foi de propósito.
+
+## Loja (personagem vendendo)
+
+Dê o nome **Loja** à janela do personagem que vende (no assistente ou em *Configurações → Slots*). Nessa
+janela:
+
+- deixe o **Gremory Case** aberto na aba **Personal Shop**;
+- quando o número de itens dele subir (ex.: `0 / 150` → `1 / 150`), chega no celular **"VENDA NA LOJA"** com a
+  imagem do Gremory Case;
+- se o Gremory Case fechar ou ficar em outra aba, chega um aviso;
+- não há alertas de caça parada (o personagem fica na cidade de propósito).
 
 ## Alertas no WhatsApp (CallMeBot)
 
@@ -111,6 +147,8 @@ Para usar tudo dentro da própria pasta do app (pendrive), crie um arquivo vazio
 | "Monitoramento limitado pelo anti-cheat" | É o GameGuard (veja acima). O app segue pela imagem; não há o que configurar |
 | "sem perfil para LxA" no card | A janela tem um tamanho sem perfil: deixe o client em 800x600 ou calibre em *Arquivo → Calibração* |
 | Telegram: "token inválido" | Copie de novo o token inteiro que o @BotFather mandou |
+| Pedido responde "não está aberto" | Abra o painel no jogo (C, I, janela de caça, Gremory Case) e deixe aberto |
+| Telegram: "outra cópia do MU Sentinel está lendo as mensagens" | O mesmo bot está em dois PCs: cada PC precisa do próprio bot |
 | Telegram: "Buscar conversas" não acha ninguém | Abra o link do bot e toque em Iniciar (vale por 24 h), depois busque de novo |
 | WhatsApp: teste falha | Confira o número com DDI, a apikey e se o número do bot ainda é o do site |
 | Nenhuma janela encontrada | O título da janela precisa ser "MU" e o processo `main.exe` (ajustável em *Configurações → Monitor*) |

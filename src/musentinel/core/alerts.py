@@ -50,7 +50,7 @@ class Alert:
         line2 = " · ".join(p for p in (hhmm, self.detail, f"nível {level}") if p)
         lines = [line1, line2]
         if inbound and self.severity == "critico" and self.slot:
-            lines.append(f"Responda: print {self.slot} · ok")
+            lines.append(f"Responda /ok para parar de repetir · /print {self.slot} para ver a tela")
         return "\n".join(lines)
 
 

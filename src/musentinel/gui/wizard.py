@@ -18,10 +18,10 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import autostart, paths, secrets, winapi
-from ..core.config import LEVEL_NAMES, RISK_TEXT, Config, mask_phone
+from ..core.config import LEVEL_NAMES, RISK_TEXT, Config, is_shop_name, mask_phone
 from ..core.discovery import Discovery, default_store
 from .qtutil import bgr_to_pixmap
-from .settings_dialog import CALLMEBOT_HELP, RecipientDialog, run_test
+from .settings_dialog import CALLMEBOT_HELP, RecipientDialog, run_test, shop_hint_label
 
 
 class SlotsPage(QWizardPage):
@@ -32,6 +32,7 @@ class SlotsPage(QWizardPage):
         self.setSubTitle("Abra os clients do MU que você quer monitorar (até 4) e dê um nome a cada slot. "
                          "O nome aparece nos alertas.")
         v = QVBoxLayout(self)
+        v.addWidget(shop_hint_label())
         self.grid = QGridLayout()
         v.addLayout(self.grid)
         self.empty = QLabel("Nenhuma janela do MU encontrada. Abra o jogo e clique em Procurar de novo.\n"
@@ -84,6 +85,15 @@ class SlotsPage(QWizardPage):
             name = QLineEdit(self.wiz.cfg.slot_name(slot))
             bv.addWidget(QLabel(f"Slot {slot}"))
             bv.addWidget(name)
+            tag = QLabel()
+            tag.setStyleSheet("color:#b26a00;")
+
+            def show_tag(text, tag=tag):
+                tag.setText("🏪 Loja: acompanha o Gremory Case (Personal Shop)" if is_shop_name(text) else "")
+
+            name.textChanged.connect(show_tag)
+            show_tag(name.text())
+            bv.addWidget(tag)
             self.names[slot] = name
             self.grid.addWidget(box, i // 2, i % 2)
         if cap:

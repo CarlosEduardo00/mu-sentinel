@@ -24,7 +24,9 @@ from .config import Config
 from .discovery import Discovery, default_store
 from .events import EventBus
 from .notifiers import CallMeBotNotifier
-from .notifiers.telegram import TelegramNotifier
+from .notifiers.telegram import TelegramCommandListener, TelegramNotifier
+from .panels import PanelEvent, PanelService
+from .remote import BOT_COMMANDS, HELP, KEYBOARD, RemoteCommands, parse
 from .state_machine import CRITICAL, Observation, SlotTracker, State
 
 log = logging.getLogger(__name__)
@@ -55,6 +57,8 @@ class SlotSnapshot:
     last_event: str = ""
     level_cap: int = 0
     connected: bool | None = None
+    shop: bool = False
+    panels: list[str] = field(default_factory=list)  # painéis vistos abertos (ver perception.panels.KINDS)
     thumb: np.ndarray | None = field(default=None, repr=False)
 
 
@@ -81,7 +85,11 @@ class Engine:
         self.local_notifiers = list(local_notifiers or [])
         self.callmebot: CallMeBotNotifier | None = None
         self.telegram: TelegramNotifier | None = None
+        self.listener: TelegramCommandListener | None = None
         self.alerts = AlertManager(config, [], level=lambda: self.cfg.level, on_sent=self._on_sent)
+        self.panels = PanelService()
+        self.remote = RemoteCommands(self)
+        self._panels_thread: threading.Thread | None = None
         self._build_notifiers()
         self.discovery = Discovery(config.monitor.window_title, config.monitor.process_name, store=default_store())
         self.internet = health.InternetProbe()
@@ -108,6 +116,8 @@ class Engine:
         self.internet.start()
         self._thread = threading.Thread(target=self._run, name="monitor", daemon=True)
         self._thread.start()
+        self._panels_thread = threading.Thread(target=self._panels_run, name="paineis", daemon=True)
+        self._panels_thread.start()
         self.bus.emit("info", "monitor iniciado (nível 0 · Observador)")
 
     def stop(self) -> None:
@@ -115,6 +125,8 @@ class Engine:
         self.internet.stop()
         if self._thread:
             self._thread.join(timeout=10)
+        if self.listener:
+            self.listener.close()
         for n in self._all_notifiers():
             try:
                 n.close()
@@ -146,6 +158,70 @@ class Engine:
             power.release_awake()
             if self._capture:
                 self._capture.close()
+
+    # ------------------------------------------------------------------ painéis (thread própria)
+    PANEL_LIVE = (State.ONLINE, State.CACANDO, State.PARADO)
+
+    def _panels_run(self) -> None:
+        next_due: dict[int, float] = {}
+        while not self._stop.wait(2.0):
+            try:
+                self.panels_tick(next_due)
+            except Exception:
+                log.exception("erro na checagem dos painéis")
+
+    def panels_tick(self, next_due: dict[int, float], now: float | None = None) -> None:
+        cfg = self.cfg
+        if not cfg.panels.enabled:
+            return
+        now = time.time() if now is None else now
+        with self._lock:
+            due = []
+            for n, s in self.slots.items():
+                if s.frame is None or now < next_due.get(n, 0.0):
+                    continue
+                shop = cfg.is_shop(n)
+                next_due[n] = now + (cfg.panels.shop_interval_s if shop else cfg.panels.interval_s)
+                due.append((n, s.frame.copy(), s.tracker.view.state in self.PANEL_LIVE, shop))
+        if not due:
+            return
+        user_active = health.user_idle_s() < cfg.thresholds.city_grace_s
+        for n, img, live, shop in due:
+            for ev in self.panels.check(n, img, live=live, user_active=user_active, is_shop=shop):
+                self._panel_event(n, ev)
+
+    def _panel_event(self, n: int, ev: PanelEvent) -> None:
+        with self._lock:
+            s = self.slots.get(n)
+            header = self._header(s) if s else f"Slot {n}"
+        if ev.kind == "reabriu":
+            self.bus.emit("info", ev.detail, slot=n)
+            return
+        if ev.kind == "fechou":
+            if not self.cfg.panels.warn_closed:
+                self.bus.emit("info", ev.detail, slot=n)
+                return
+            title, key = "PAINEL FECHADO", f"PAINEL_{ev.panel}"
+        elif ev.kind == "venda":
+            title, key = "VENDA NA LOJA", f"VENDA_{time.time():.0f}"
+        else:  # "aba"
+            title, key = "GREMORY CASE NA ABA ERRADA", "LOJA_ABA"
+        self.bus.emit("alerta", f"{title}: {ev.detail}", slot=n, severity="aviso", kind_code=key)
+        self.alerts.submit(Alert(n, key, "aviso", title, header, ev.detail, image=ev.image))
+        if s:
+            s.last_event = f"{time.strftime('%H:%M')} {title}"
+
+    def frame_copy(self, slot: int) -> np.ndarray | None:
+        with self._lock:
+            s = self.slots.get(slot)
+            return None if s is None or s.frame is None else s.frame.copy()
+
+    def _on_remote(self, text: str) -> list[tuple[str, bytes | None]]:
+        cmd = parse(text)
+        if cmd is None:
+            return [("Não entendi esse pedido.\n\n" + HELP, None)]
+        self.bus.emit("info", f"pedido pelo Telegram: {cmd.name}" + (f" {cmd.slot}" if cmd.slot else ""))
+        return [(r.text, r.image) for r in self.remote.handle(cmd)]
 
     # ------------------------------------------------------------------ um ciclo
     def cycle(self) -> None:
@@ -377,16 +453,22 @@ class Engine:
         return self.local_notifiers + [n for n in (self.callmebot, self.telegram) if n]
 
     def _build_notifiers(self) -> None:
-        for n in (self.callmebot, self.telegram):
+        for n in (self.callmebot, self.telegram, self.listener):
             if n:
                 n.close()
-        self.callmebot = self.telegram = None
+        self.callmebot = self.telegram = self.listener = None
         cm = self.cfg.notifiers.callmebot
         if cm.enabled and any(r.enabled for r in cm.recipients):
             self.callmebot = CallMeBotNotifier(cm.recipients, cm.min_interval_s)
         tg = self.cfg.notifiers.telegram
         if tg.enabled and any(c.enabled for c in tg.chats):
             self.telegram = TelegramNotifier(tg.chats, tg.min_interval_s, tg.send_images)
+        if tg.enabled and tg.commands and tg.chats:
+            # pedidos pelo celular: só das conversas cadastradas no app
+            self.listener = TelegramCommandListener({c.chat_id for c in tg.chats}, self._on_remote,
+                                                    KEYBOARD, BOT_COMMANDS)
+            if self.telegram:
+                self.telegram.supports_inbound = True  # dá para responder /ok: crítico repete até o ok
         local = self.local_notifiers if self.cfg.notifiers.windows.enabled else []
         self.alerts.set_notifiers(local + [n for n in (self.callmebot, self.telegram) if n])
 
@@ -400,6 +482,8 @@ class Engine:
         if self.telegram:
             st = self.telegram.status()
             out.append((self.telegram.name, st.ok, st.detail))
+            if self.listener and not self.listener.status.ok:
+                out.append(("Telegram (pedidos)", False, self.listener.status.detail))
         elif tg.enabled:
             out.append(("Telegram", False, "nenhuma conversa marcada"))
         cm = self.cfg.notifiers.callmebot
@@ -443,6 +527,7 @@ class Engine:
                     coords=v.coords, map=v.map, exp_per_h=v.exp_per_h, exp_pct_per_h=v.exp_pct_per_h,
                     hunting_time=v.hunting_time, note=v.note, last_event=s.last_event,
                     level_cap=self.cfg.slot(n).level_cap, connected=s.connected,
+                    shop=self.cfg.is_shop(n), panels=self.panels.open_panels(n),
                     thumb=None if s.thumb is None else s.thumb.copy()))
         return out
 
@@ -464,6 +549,7 @@ class Engine:
             self.slots.pop(slot, None)
             self.discovery.forget(slot)
             self.alerts.resolve(slot)
+        self.panels.forget(slot)
 
     def ack(self, slot: int | None = None) -> int:
         n = self.alerts.ack(slot)
