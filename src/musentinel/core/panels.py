@@ -23,7 +23,7 @@ from .perception.ocr import OcrEngine
 
 log = logging.getLogger(__name__)
 
-RESCAN_S = 300  # procura painéis novos na tela inteira a cada 5 min
+RESCAN_S = 600  # procura painéis novos na tela inteira a cada 10 min (OCR da tela toda é caro)
 RECHECK_CLOSED_S = 90  # painel que fechou (já avisado): procura de novo a cada 1,5 min
 SEEN_CHECKS = 2  # painel aberto em 2 checagens seguidas = "o usuário deixou aberto"
 MISSING_CHECKS = 3  # sumido em 3 checagens seguidas = fechou
@@ -50,6 +50,7 @@ class _SlotState:
     shop_base: int | None = None
     shop_pending: tuple[int, int] | None = None  # (contagem nova, vezes lida)
     shop_tab_warned: bool = False
+    shop_band: np.ndarray | None = field(default=None, repr=False)  # imagem do contador na última leitura
     last_grid: list[list[bool]] | None = None
 
 
@@ -66,6 +67,7 @@ class PanelService:
         self._slots: dict[int, _SlotState] = {}
         # painéis abertos por slot, para o monitor consultar sem esperar uma varredura (que leva segundos)
         self._open: dict[int, list[str]] = {}
+        self._hits_pub: dict[int, dict[str, P.PanelHit]] = {}
 
     @property
     def ocr(self) -> OcrEngine:
@@ -81,13 +83,27 @@ class PanelService:
         with self._lock:
             self._slots.pop(slot, None)
             self._open.pop(slot, None)
+            self._hits_pub.pop(slot, None)
 
     def open_panels(self, slot: int) -> list[str]:
         """Painéis vistos abertos na última checagem, na ordem de P.KINDS. Não espera o OCR."""
         return list(self._open.get(slot, []))
 
+    def hit(self, slot: int, kind: str) -> P.PanelHit | None:
+        """Onde o painel estava na última checagem (sem esperar o OCR)."""
+        return self._hits_pub.get(slot, {}).get(kind)
+
     def _publish(self, slot: int, st: _SlotState) -> None:
         self._open[slot] = [k for k in P.KINDS if k in st.hits]
+        self._hits_pub[slot] = dict(st.hits)
+
+    def adopt(self, slot: int, hits: dict[str, P.PanelHit]) -> None:
+        """Usa uma varredura feita por outra rotina (ex.: calibração) como a mais recente."""
+        with self._lock:
+            st = self._st(slot)
+            st.hits = dict(hits)
+            st.last_scan = self._clock()
+            self._publish(slot, st)
 
     # ------------------------------------------------------------------ localizar
     def _refresh_hits(self, st: _SlotState, img: np.ndarray, force: bool = False,
@@ -162,7 +178,13 @@ class PanelService:
                                                   "Personal Shop para eu ver as vendas")]
             return []
         st.shop_tab_warned = False
+        band = P.shop_counter_crop(img, hit)
+        if band is not None and st.shop_base is not None and st.shop_pending is None \
+                and P.same_image(band, st.shop_band):
+            return []  # contador com a mesma imagem da última leitura: nada mudou, sem OCR
         counter = P.read_shop_counter(img, hit, self.ocr)
+        if counter is not None and band is not None:
+            st.shop_band = band.copy()
         if counter is None:  # algo por cima do contador (dica de item, menu): tenta na próxima
             return []
         count, cap = counter

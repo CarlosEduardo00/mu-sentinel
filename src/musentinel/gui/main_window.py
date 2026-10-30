@@ -154,7 +154,11 @@ class SlotCard(QFrame):
         self.b_forget = QPushButton("Remover slot")
         self.b_forget.setToolTip("O client foi fechado de propósito: para de monitorar este slot")
         self.b_forget.clicked.connect(self._forget)
-        for b in (self.b_print, self.b_ack, self.b_forget):
+        self.b_cal = QPushButton("Calibrar")
+        self.b_cal.setToolTip("Lê o HUD e os painéis desta janela com o OCR completo e ensina o leitor "
+                              "(HP, EXP, mapa, tempo de caça). Use depois de mudar resolução ou layout.")
+        self.b_cal.clicked.connect(lambda: self.win.calibrate_slots([self.slot]))
+        for b in (self.b_print, self.b_cal, self.b_ack, self.b_forget):
             btns.addWidget(b)
         btns.addStretch()
         v.addLayout(btns)
@@ -200,6 +204,7 @@ class SlotCard(QFrame):
         self.b_ack.setVisible(active_alert)
         self.b_forget.setVisible(s.state == State.FECHADO)
         self.b_print.setEnabled(s.thumb is not None)
+        self.b_cal.setEnabled(s.thumb is not None and not self.win.calibrating)
 
     def _rename(self) -> None:
         from PySide6.QtWidgets import QInputDialog
@@ -301,6 +306,7 @@ class MainWindow(QMainWindow):
         self.tray_notifier = TrayNotifier(self.bridge)
         self.engine = Engine(cfg, bus, [self.tray_notifier])
         self.cards: dict[int, SlotCard] = {}
+        self.calibrating = False
         self._quitting = False
         self._tray_hint_shown = False
 
@@ -360,7 +366,8 @@ class MainWindow(QMainWindow):
     def _build_menu(self) -> None:
         m = self.menuBar().addMenu("&Arquivo")
         for text, fn in (("Configurações…", self.open_settings), ("Assistente de configuração…", self.open_wizard),
-                         ("Calibração…", self.open_calibration),
+                         ("Calibrar todas as janelas agora", lambda: self.calibrate_slots(None)),
+                         ("Calibração manual…", self.open_calibration),
                          ("Abrir pasta de dados", lambda: os.startfile(paths.data_dir()))):
             a = QAction(text, self)
             a.triggered.connect(fn)
@@ -576,6 +583,41 @@ class MainWindow(QMainWindow):
         self.cfg = cfg
         self.engine.apply_config(cfg)
         self.refresh_status()
+
+    def calibrate_slots(self, slots: list[int] | None) -> None:
+        """Calibração automática (OCR completo da tela) de uma ou de todas as janelas, sem travar a tela."""
+        if self.calibrating:
+            return
+        nums = slots if slots is not None else sorted(self.cards)
+        if not nums:
+            QMessageBox.information(self, "Calibrar", "Nenhuma janela do MU aberta agora.")
+            return
+        self.calibrating = True
+        for c in self.cards.values():
+            c.b_cal.setEnabled(False)
+        self.statusBar().showMessage("Calibrando… (lendo a tela inteira de cada janela, leva alguns segundos)")
+        from .telegram_panel import run_async
+
+        def work():
+            return [(n, self.engine.calibrate_slot(n)) for n in nums]
+
+        def done(results, err):
+            self.calibrating = False
+            for c in self.cards.values():
+                c.b_cal.setEnabled(True)
+            self.statusBar().clearMessage()
+            if err:
+                QMessageBox.warning(self, "Calibrar", f"A calibração falhou: {err}")
+                return
+            parts = []
+            for n, res in results:
+                body = "sem imagem da janela (minimizada?)" if res is None else (res.summary() or "nada lido")
+                parts.append(f"<b>Slot {n} · {self.cfg.slot_name(n)}</b><br>" + body.replace("\n", "<br>"))
+            QMessageBox.information(self, "Calibração automática", "<br><br>".join(parts)
+                                    + "<br><br>Dica: calibrar de novo com outros números na tela (ex.: depois de "
+                                      "tomar dano ou subir EXP) ensina dígitos que ainda faltam.")
+
+        run_async(work, done)
 
     def open_calibration(self) -> None:
         from .calibration import CalibrationWindow

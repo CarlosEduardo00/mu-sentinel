@@ -59,7 +59,8 @@ class _Session:
 class WgcCapture:
     name = "wgc"
 
-    def __init__(self, min_interval_ms: int = 250, first_frame_timeout_s: float = 3.0):
+    # o monitor usa 1 quadro a cada 2 s: pedir mais ao Windows só copia imagem à toa
+    def __init__(self, min_interval_ms: int = 1000, first_frame_timeout_s: float = 3.0):
         self._sessions: dict[int, _Session] = {}
         self._min_interval_ms = min_interval_ms
         self._timeout = first_frame_timeout_s

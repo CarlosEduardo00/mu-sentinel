@@ -62,7 +62,7 @@ class FakeReader:
     def __init__(self, game):
         self.game = game
 
-    def read(self, img):
+    def read(self, img, fields=None):
         i = int(img[0, 0, 0])
         g = self.game
         g.exp[i] += 300
@@ -221,3 +221,35 @@ def test_critical_alert_carries_window_print(rig):
     run(6)
     i = next(k for k, m in enumerate(ext.sent) if "MORTE" in m)
     assert ext.images[i] is not None and ext.images[i][:2] == b"\xff\xd8"  # JPEG
+
+
+class _Unread:
+    status, raw, confidence = "unreadable", "", 0.0
+
+
+def test_unreadable_hud_triggers_autocal_at_most_every_10_min(rig, monkeypatch):
+    game, e, ext, run, clock = rig(1)
+    calls = []
+    monkeypatch.setattr(e, "calibrate_slot", lambda n, auto=False: calls.append((n, auto)))
+    good = e._readers[(800, 600)]
+
+    class BadReader:
+        def read(self, img, fields=None):
+            r = good.read(img, fields)
+            r.fields = {"hp": _Unread(), "exp": _Unread()}
+            return r
+
+    e._readers[(800, 600)] = BadReader()
+    run(10)
+    e.panels_tick({})
+    assert calls == []  # 20 s ilegível ainda não basta
+    run(6)
+    e.panels_tick({})
+    assert calls == [(1, True)]
+    run(20)
+    e.panels_tick({})
+    assert len(calls) == 1  # não repete antes de 10 min
+    clock["t"] += 601
+    run(16)
+    e.panels_tick({})
+    assert len(calls) == 2

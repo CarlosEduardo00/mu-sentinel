@@ -6,11 +6,13 @@ próprio MU Sentinel (ok / pausar / retomar). Os painéis precisam estar abertos
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 import unicodedata
 from dataclasses import dataclass
+from pathlib import Path
 
 from .panels import jpeg
 from .perception import panels as P
@@ -29,6 +31,7 @@ class Command:
 class Reply:
     text: str
     image: bytes | None = None
+    buttons: list[list[tuple[str, str]]] | None = None  # botões na própria mensagem: [(texto, dado)]
 
 
 # primeira palavra (sem acento, minúscula, sem / e sem emoji) → comando
@@ -43,10 +46,13 @@ ALIASES = {
     "pausar": "pausar", "pausa": "pausar",
     "retomar": "retomar", "voltar": "retomar",
     "ajuda": "ajuda", "help": "ajuda", "start": "ajuda", "menu": "ajuda", "comandos": "ajuda",
+    "alvo": "alvo", "escolher": "alvo", "quem": "alvo",
 }
 
 KEYBOARD = [["📊 Status", "📸 Print"], ["🎒 Inventário", "🧍 Personagem"], ["⏱ Caçada", "🏪 Loja"],
-            ["✅ OK, vi o alerta"]]
+            ["🎯 Escolher personagem", "✅ OK, vi o alerta"]]
+TARGET_CMDS = ("status", "print", "inventario", "personagem", "caca")  # respondem só do personagem escolhido
+TARGETS_FILE = "telegram_alvo.json"
 
 BOT_COMMANDS = [  # menu "/" do Telegram (só letras minúsculas, dígitos e _)
     ("status", "Como estão os slots"),
@@ -58,6 +64,7 @@ BOT_COMMANDS = [  # menu "/" do Telegram (só letras minúsculas, dígitos e _)
     ("ok", "Marcar os alertas críticos como vistos"),
     ("pausar", "Pausar os alertas (ex.: /pausar 60)"),
     ("retomar", "Retomar os alertas"),
+    ("alvo", "Escolher de qual personagem os pedidos respondem"),
     ("ajuda", "O que dá para pedir"),
 ]
 
@@ -70,6 +77,7 @@ HELP = """MU Sentinel — o que dá para pedir (use os botões ou digite):
 /loja — Gremory Case do slot Loja (vendas)
 /ok — marca os alertas críticos como vistos (para os lembretes, se ligados)
 /pausar 60 — pausa os alertas por 60 min · /retomar
+/alvo — escolhe de qual personagem os pedidos respondem (ou de todos)
 
 Os painéis precisam estar abertos no jogo: o MU Sentinel só olha a tela, não aperta teclas."""
 
@@ -109,20 +117,75 @@ class RemoteCommands:
 
     PANEL_CMDS = ("inventario", "personagem", "caca", "loja")
 
-    def __init__(self, engine, clock=time.time) -> None:
+    def __init__(self, engine, clock=time.time, store: Path | None = None) -> None:
         self.engine = engine
         self.clock = clock
+        self._store = store
+        self.targets: dict[int, int] = self._load_targets()  # conversa → slot escolhido (sem = todos)
 
-    def handle(self, cmd: Command) -> list[Reply]:
+    # ------------------------------------------------------------------ personagem escolhido
+    def _load_targets(self) -> dict[int, int]:
+        try:
+            if self._store and self._store.exists():
+                return {int(k): int(v) for k, v in json.loads(self._store.read_text(encoding="utf-8")).items()}
+        except Exception:
+            log.warning("não consegui ler %s; pedidos voltam a responder de todos", self._store)
+        return {}
+
+    def _save_targets(self) -> None:
+        if not self._store:
+            return
+        try:
+            self._store.write_text(json.dumps({str(k): v for k, v in self.targets.items()}), encoding="utf-8")
+        except OSError:
+            log.warning("não consegui salvar a escolha de personagem do Telegram")
+
+    def target_name(self, chat_id: int) -> str:
+        n = self.targets.get(chat_id)
+        return "Todos" if not n else f"{n} · {self.engine.cfg.slot_name(n)}"
+
+    def picker(self, chat_id: int) -> Reply:
+        """Mensagem com um botão por personagem (e "Todos")."""
+        cur = self.targets.get(chat_id, 0)
+        opts = [(0, "Todos")] + [(s.slot, f"{s.slot} · {s.name}") for s in self.engine.snapshots()]
+        buttons = [(("✓ " if n == cur else "") + label, f"alvo:{n}") for n, label in opts]
+        rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+        return Reply(f"🎯 De qual personagem os pedidos devem responder?\nAgora: {self.target_name(chat_id)}",
+                     buttons=rows)
+
+    def on_button(self, data: str, chat_id: int) -> tuple[str, Reply | None]:
+        """Toque num botão da mensagem. Retorna (aviso curto, mensagem atualizada)."""
+        if not data.startswith("alvo:"):
+            return "", None
+        try:
+            n = int(data.split(":", 1)[1])
+        except ValueError:
+            return "", None
+        if n:
+            self.targets[chat_id] = n
+        else:
+            self.targets.pop(chat_id, None)
+        self._save_targets()
+        return f"Agora: {self.target_name(chat_id)}", self.picker(chat_id)
+
+    def handle(self, cmd: Command, chat_id: int = 0) -> list[Reply]:
         try:
             if cmd.name == "ajuda":
                 return [Reply(HELP)]
+            if cmd.name == "alvo":
+                return [self.picker(chat_id)]
+            slot = cmd.slot
+            if slot is None and cmd.name in TARGET_CMDS:
+                slot = self.targets.get(chat_id) or None
+                if slot is not None and slot not in {s.slot for s in self.engine.snapshots()}:
+                    return [Reply(f"O personagem escolhido ({self.target_name(chat_id)}) não está aberto agora. "
+                                  "Toque em 🎯 Escolher personagem para trocar.")]
             if cmd.name == "status":
-                return [Reply(self._status())]
+                return [Reply(self._status(slot))]
             if cmd.name == "print":
-                return self._prints(cmd.slot)
+                return self._prints(slot)
             if cmd.name in self.PANEL_CMDS:
-                return self._panel(cmd.name, cmd.slot)
+                return self._panel(cmd.name, slot)
             if cmd.name == "ok":
                 n = self.engine.ack()
                 return [Reply(f"✅ {n} alerta(s) marcado(s) como visto(s)." if n
@@ -153,8 +216,8 @@ class RemoteCommands:
             return [], f"Não existe o slot {slot}. Slots agora: {', '.join(map(str, nums))}."
         return [slot], None
 
-    def _status(self) -> str:
-        snaps = self.engine.snapshots()
+    def _status(self, slot: int | None = None) -> str:
+        snaps = [s for s in self.engine.snapshots() if slot is None or s.slot == slot]
         if not snaps:
             return "Nenhuma janela do MU encontrada agora."
         now = self.clock()

@@ -88,7 +88,7 @@ class TelegramApi:
         return self.call("getMe")
 
     def get_updates(self, offset: int | None = None, timeout: int = 0) -> list[dict]:
-        data = {"timeout": timeout, "allowed_updates": '["message","my_chat_member"]'}
+        data = {"timeout": timeout, "allowed_updates": '["message","my_chat_member","callback_query"]'}
         if offset is not None:
             data["offset"] = offset
         return self.call("getUpdates", data) or []
@@ -100,11 +100,24 @@ class TelegramApi:
         found = remember_chats(self.get_updates())
         return list(found.items())
 
-    def send_message(self, chat_id: int, text: str, keyboard: list[list[str]] | None = None) -> None:
+    def send_message(self, chat_id: int, text: str, keyboard: list[list[str]] | None = None,
+                     buttons: list[list[tuple[str, str]]] | None = None) -> None:
         data = {"chat_id": str(chat_id), "text": text[:MAX_TEXT], "disable_web_page_preview": "true"}
-        if keyboard:
+        if buttons:
+            data["reply_markup"] = _buttons_json(buttons)
+        elif keyboard:
             data["reply_markup"] = _keyboard_json(keyboard)
         self.call("sendMessage", data)
+
+    def edit_message(self, chat_id: int, message_id: int, text: str,
+                     buttons: list[list[tuple[str, str]]] | None = None) -> None:
+        data = {"chat_id": str(chat_id), "message_id": str(message_id), "text": text[:MAX_TEXT]}
+        if buttons:
+            data["reply_markup"] = _buttons_json(buttons)
+        self.call("editMessageText", data)
+
+    def answer_button(self, callback_id: str, text: str = "") -> None:
+        self.call("answerCallbackQuery", {"callback_query_id": callback_id, "text": text[:190]})
 
     def send_photo(self, chat_id: int, jpeg: bytes, caption: str, keyboard: list[list[str]] | None = None) -> None:
         data = {"chat_id": str(chat_id), "caption": caption[:MAX_CAPTION]}
@@ -120,6 +133,11 @@ class TelegramApi:
 def _keyboard_json(rows: list[list[str]]) -> str:
     return json.dumps({"keyboard": [[{"text": t} for t in row] for row in rows],
                        "resize_keyboard": True, "is_persistent": True}, ensure_ascii=False)
+
+
+def _buttons_json(rows: list[list[tuple[str, str]]]) -> str:
+    return json.dumps({"inline_keyboard": [[{"text": t, "callback_data": d[:64]} for t, d in row] for row in rows]},
+                      ensure_ascii=False)
 
 
 # conversas vistas pelo bot nesta execução (para "Buscar conversas" enquanto a escuta está ligada)
@@ -297,8 +315,10 @@ class TelegramNotifier:
 NOT_ALLOWED_TEXT = ("Oi! Este bot avisa sobre o MU de outra pessoa. Se você deve receber os alertas, peça para "
                     "o dono clicar em \"Buscar conversas\" no MU Sentinel.")
 
-# (texto do pedido) -> respostas [(texto, jpeg ou None)]
-Handler = Callable[[str], list[tuple[str, bytes | None]]]
+# (texto do pedido, conversa) -> respostas [(texto, jpeg ou None, botões ou None)]
+Handler = Callable[[str, int], list[tuple]]
+# (dado do botão, conversa) -> (aviso curto, (texto novo, botões novos) ou None)
+ButtonHandler = Callable[[str, int], tuple[str, tuple | None]]
 
 
 class TelegramCommandListener:
@@ -315,9 +335,10 @@ class TelegramCommandListener:
     def __init__(self, allowed: set[int], handler: Handler, keyboard: list[list[str]] | None = None,
                  commands: list[tuple[str, str]] | None = None, http_post: HttpPost | None = None,
                  token_lookup: Callable[[str], str | None] = get_secret, clock: Callable[[], float] = time.time,
-                 start: bool = True) -> None:
+                 start: bool = True, on_button: ButtonHandler | None = None) -> None:
         self.allowed = set(allowed)
         self.handler = handler
+        self.on_button = on_button
         self.keyboard = keyboard
         self.commands = commands
         self._post = http_post
@@ -387,6 +408,9 @@ class TelegramCommandListener:
         served = 0
         for u in updates:
             self._offset = int(u["update_id"]) + 1
+            if u.get("callback_query"):
+                self._button(api, u["callback_query"])
+                continue
             msg = u.get("message") or {}
             chat_id = (msg.get("chat") or {}).get("id")
             text = (msg.get("text") or "").strip()
@@ -403,7 +427,7 @@ class TelegramCommandListener:
                 continue  # mandado com o app fechado
             log.info("Telegram: pedido recebido: %s", text[:40])
             try:
-                replies = self.handler(text)
+                replies = self.handler(text, chat_id)
             except Exception:
                 log.exception("Telegram: erro ao atender pedido")
                 replies = [("Não consegui atender o pedido (erro interno; detalhes no log do app).", None)]
@@ -411,8 +435,27 @@ class TelegramCommandListener:
             served += 1
         return served
 
+    def _button(self, api: TelegramApi, cq: dict) -> None:
+        """Toque num botão de uma mensagem do bot (ex.: escolher o personagem)."""
+        msg = cq.get("message") or {}
+        chat_id = (msg.get("chat") or {}).get("id")
+        toast, new = "", None
+        if chat_id is not None and int(chat_id) in self.allowed and self.on_button:
+            try:
+                toast, new = self.on_button(str(cq.get("data") or ""), int(chat_id))
+            except Exception:
+                log.exception("Telegram: erro no botão")
+        try:
+            api.answer_button(str(cq.get("id")), toast)
+            if new and msg.get("message_id") is not None:
+                api.edit_message(int(chat_id), int(msg["message_id"]), new[0], new[1])
+        except TelegramError as exc:
+            log.warning("Telegram: botão sem resposta (%s)", exc.description)
+
     def _reply(self, api: TelegramApi, chat_id: int, replies, keyboard: bool = True) -> None:
-        for i, (text, image) in enumerate(replies):
+        for i, item in enumerate(replies):
+            text, image = item[0], item[1]
+            buttons = item[2] if len(item) > 2 else None
             kb = self.keyboard if keyboard and i == len(replies) - 1 else None
             for attempt in range(2):
                 try:
@@ -421,7 +464,7 @@ class TelegramCommandListener:
                         if len(text) > MAX_CAPTION:  # legenda longa: manda o resto como texto
                             api.send_message(chat_id, text[MAX_CAPTION:], kb)
                     else:
-                        api.send_message(chat_id, text, kb)
+                        api.send_message(chat_id, text, kb, buttons)
                     break
                 except TelegramError as exc:
                     if exc.kind == "retry" and exc.retry_after and attempt == 0:

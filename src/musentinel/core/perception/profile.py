@@ -150,7 +150,9 @@ class Profile(BaseModel):
             return None  # textos sempre do mesmo tamanho: não dá para saber o alinhamento
         sides = {"left": a[:, 0], "center": a.mean(axis=1), "right": a[:, 1]}
         name, vals = min(sides.items(), key=lambda kv: kv[1].std())
-        return name, float(np.median(vals)), max(3.0, 3 * float(vals.std()))
+        # dígitos de larguras diferentes ("1" é fino) deslocam o centro uns pixels: tolerância cresce
+        # com a largura do texto, para não recusar leitura certa (EXP 81186/1316440 saiu 5 px do centro)
+        return name, float(np.median(vals)), max(3.0, 3 * float(vals.std()), 0.05 * float(np.median(widths)) + 2)
 
     # ------------------------------------------------------------ mapas
     def map_refs(self) -> dict[str, np.ndarray]:

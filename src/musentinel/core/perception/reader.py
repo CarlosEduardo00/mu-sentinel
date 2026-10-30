@@ -92,15 +92,7 @@ class HudReader:
             if not self._in_place(name, extent):
                 # texto fora do alinhamento de sempre: provavelmente meio coberto por um menu
                 return unreadable(text, min(conf, 0.4))
-            r = self._gate(PARSERS[name](text, conf))
-            if r.ok and self.profile.missing_chars(name):
-                # A fonte deste campo ainda não tem todos os dígitos próprios (os que faltam vêm
-                # emprestados de outro campo, com outro fundo). Um dígito desconhecido pode casar
-                # com o modelo errado (6 lido como 5): só vale se o OCR confirmar o mesmo valor.
-                return self._ocr_confirm(name, crop, r) if self.ocr_fallback else unreadable(text, UNKNOWN_CHAR_CONF)
-            if not r.ok and self.ocr_fallback and conf <= UNKNOWN_CHAR_CONF:
-                r = self._ocr_rescue(name, crop, text) or r
-            return r
+            return self._glyph_result(name, crop, text, conf)
 
         if name == "map":
             ref_name, ref_score = self._match_map_ref(crop)
@@ -128,11 +120,52 @@ class HudReader:
 
         return unreadable("tipo de campo desconhecido")
 
+    def _glyph_result(self, name: str, crop: np.ndarray, text: str, conf: float) -> FieldReading:
+        r = self._gate(PARSERS[name](text, conf))
+        if r.ok and self.profile.missing_chars(name):
+            # A fonte deste campo ainda não tem todos os dígitos próprios (os que faltam vêm
+            # emprestados de outro campo, com outro fundo). Um dígito desconhecido pode casar
+            # com o modelo errado (6 lido como 5): só vale se o OCR confirmar o mesmo valor.
+            return self._ocr_confirm(name, crop, r) if self.ocr_fallback else unreadable(text, UNKNOWN_CHAR_CONF)
+        if not r.ok and self.ocr_fallback:
+            # valor impossível ou incompleto ("208/28"): o OCR lê de novo; só vale se as duas escalas
+            # concordarem e o resultado contiver, na ordem, o que o modelo já tinha lido
+            r = self._ocr_rescue(name, crop, text) or r
+        return r
+
+    def read_field_at(self, image: np.ndarray, name: str, roi) -> FieldReading:
+        """Lê um campo de dígitos numa região dada (ex.: tempo de caça no Instant Hunting Log desta
+        janela, que o usuário pode ter arrastado). O painel já foi achado aberto por quem chamou."""
+        crop = roi.crop(image)
+        if crop.size == 0:
+            return unreadable("região fora da janela")
+        font = self.profile.reading_font(name)
+        if not font.glyphs:
+            return unreadable("sem fonte calibrada")
+        try:
+            text, conf, _ = glyphs.read_text_ex(crop, font, CHARSETS.get(name))
+        except Exception as exc:
+            return unreadable(f"erro: {type(exc).__name__}: {exc}")
+        if not text:
+            return unreadable("", 0.0)
+        return self._glyph_result(name, crop, text, conf)
+
     def _ocr_confirm(self, name: str, crop: np.ndarray, r: FieldReading) -> FieldReading:
         """Template e OCR (duas escalas) precisam dar o mesmo valor; senão, ilegível."""
-        text, score = self.ocr.read_number(crop, CHARSETS[name])
+        cs = CHARSETS[name]
+        text, score = self.ocr.read_number(crop, cs)
         if text and score >= self.min_confidence:
             o = PARSERS[name](text, score)
+            if o.ok and o.value == r.value:
+                return r
+        # segunda chance: uma leitura simples do OCR igual à do modelo (dois leitores independentes
+        # concordando). Ajuda em vírgula pequena, que uma das duas escalas do OCR às vezes perde.
+        line, s2 = self.ocr.read_line(crop)
+        if "," in cs and "." not in cs:
+            line = line.replace(".", ",")
+        line = "".join(c for c in line if c in cs)
+        if line and s2 >= 0.9:
+            o = PARSERS[name](line, s2)
             if o.ok and o.value == r.value:
                 return r
         return unreadable(r.raw, 0.4)

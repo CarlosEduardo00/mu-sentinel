@@ -28,6 +28,29 @@ DEFAULT_CITIES = ["Lorencia", "Devias", "Noria", "Elbeland"]
 
 
 SMALL_H = 20  # recortes até esta altura (px) têm texto pequeno
+DEFAULT_THREADS = 2
+
+
+def _no_spinning() -> None:
+    """Threads do ONNX Runtime dormem quando acabam (por padrão ficam girando à espera de trabalho,
+    gastando CPU à toa entre uma leitura e outra)."""
+    try:
+        from rapidocr_onnxruntime.utils import infer_engine as ie
+
+        if getattr(ie.OrtInferSession, "_musentinel_patched", False):
+            return
+        orig = ie.OrtInferSession._init_sess_opts
+
+        def init_sess_opts(config):
+            so = orig(config)
+            so.add_session_config_entry("session.intra_op.allow_spinning", "0")
+            so.add_session_config_entry("session.inter_op.allow_spinning", "0")
+            return so
+
+        ie.OrtInferSession._init_sess_opts = staticmethod(init_sess_opts)
+        ie.OrtInferSession._musentinel_patched = True
+    except Exception:  # versão diferente do RapidOCR: segue com o padrão
+        pass
 
 
 @dataclass(frozen=True)
@@ -65,9 +88,9 @@ class TextBox:
 class OcrEngine:
     """Carrega o modelo só quando for usado e guarda cache por imagem."""
 
-    def __init__(self, cache_size: int = 256, threads: int | None = None):
-        """threads: núcleos da CPU que o OCR pode usar (None = todos). Limitar evita que uma leitura
-        pesada (tela inteira) atrase o monitor."""
+    def __init__(self, cache_size: int = 256, threads: int | None = DEFAULT_THREADS):
+        """threads: núcleos da CPU que o OCR pode usar (None = todos). Medido num i5 de 16 núcleos:
+        com todos, cada leitura do HUD gasta ~460 ms de CPU (threads disputando entre si); com 2, ~120 ms."""
         self._threads = threads
         self._engine = None
         self._lock = threading.Lock()
@@ -80,6 +103,7 @@ class OcrEngine:
 
             from rapidocr_onnxruntime import RapidOCR
 
+            _no_spinning()
             n = self._threads
             if n and 1 <= n <= (os.cpu_count() or 1):
                 self._engine = RapidOCR(intra_op_num_threads=n, inter_op_num_threads=1)

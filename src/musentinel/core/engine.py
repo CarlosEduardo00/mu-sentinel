@@ -26,11 +26,17 @@ from .events import EventBus
 from .notifiers import CallMeBotNotifier
 from .notifiers.telegram import TelegramCommandListener, TelegramNotifier
 from .panels import PanelEvent, PanelService
-from .remote import BOT_COMMANDS, HELP, KEYBOARD, RemoteCommands, parse
+from .perception import autocal
+from .perception import panels as P
+from .perception.autocal import hunting_time_roi
+from .perception.reader import DEFAULT_FIELDS
+from .remote import BOT_COMMANDS, HELP, KEYBOARD, TARGETS_FILE, RemoteCommands, parse
 from .state_machine import CRITICAL, Observation, SlotTracker, State
 
 log = logging.getLogger(__name__)
 THUMB_W = 320
+AUTOCAL_BAD_CYCLES = 15  # HP/EXP ilegível por ~30 s seguidos → calibra a janela sozinho
+AUTOCAL_EVERY_S = 600  # no máximo 1 calibração automática a cada 10 min por janela
 PROTECTION_TITLE = "MONITORAMENTO LIMITADO PELO ANTI-CHEAT"
 PROTECTION_NOTE = ("o anti-cheat do jogo (GameGuard) não deixa o MU Sentinel ver de qual processo são as "
                    "janelas do MU; o app segue pela imagem da janela, mas sem checar a conexão com o servidor "
@@ -76,6 +82,9 @@ class _Slot:
         self.last_event = ""
         self.critical_sent = False
         self.connected: bool | None = None
+        self.hud_bad = 0  # ciclos seguidos com HP/EXP ilegível
+        self.autocal_due = False
+        self.autocal_at = 0.0
 
 
 class Engine:
@@ -88,7 +97,7 @@ class Engine:
         self.listener: TelegramCommandListener | None = None
         self.alerts = AlertManager(config, [], level=lambda: self.cfg.level, on_sent=self._on_sent)
         self.panels = PanelService()
-        self.remote = RemoteCommands(self)
+        self.remote = RemoteCommands(self, store=paths.data_dir() / TARGETS_FILE)
         self._panels_thread: threading.Thread | None = None
         self._build_notifiers()
         self.discovery = Discovery(config.monitor.window_title, config.monitor.process_name, store=default_store())
@@ -98,6 +107,7 @@ class Engine:
         self._ocr = None
         self._capture = None
         self._lock = threading.RLock()
+        self._cal_lock = threading.Lock()  # uma calibração por vez
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.started_at = time.time()
@@ -177,7 +187,54 @@ class Engine:
             except Exception:
                 log.exception("erro na checagem dos painéis")
 
+    def _want_autocal(self, s: _Slot, now: float) -> None:
+        if now - s.autocal_at >= AUTOCAL_EVERY_S:
+            s.autocal_due = True
+
+    def calibrate_slot(self, n: int, auto: bool = False) -> autocal.CalResult | None:
+        """Calibra o perfil do tamanho desta janela com o OCR completo da tela (leva alguns segundos).
+
+        Roda fora da thread do monitor (thread dos painéis ou da tela). None = sem imagem da janela.
+        """
+        img = self.frame_copy(n)
+        if img is None:
+            return None
+        h, w = img.shape[:2]
+        with self._cal_lock:
+            existed = paths.has_profile(w, h)
+            prof = paths.load_or_default_profile(w, h)
+            hits, boxes = P.scan(img, self.panels.ocr)
+            self.panels.adopt(n, hits)
+            prof, res = autocal.calibrate(img, self.panels.ocr, prof, boxes=boxes, caca=hits.get("caca"))
+            res.created = res.created or not existed
+            if res.created or res.learned or res.moved:
+                prof.notes = (prof.notes + "\n" if prof.notes else "") + \
+                    f"calibração {'automática' if auto else 'pedida'} {datetime.now():%Y-%m-%d %H:%M} (slot {n})"
+                prof.save(paths.profile_path(w, h))
+                self.reload_profiles()
+        with self._lock:
+            s = self.slots.get(n)
+            if s:
+                s.hud_bad = 0
+                s.autocal_at = time.time()
+        self.bus.emit("info", f"calibração {'automática' if auto else ''} da janela: "
+                      + (res.summary().replace("\n", " · ") or "nada lido"), slot=n)
+        return res
+
+    def _run_due_autocal(self) -> None:
+        with self._lock:
+            due = [n for n, s in self.slots.items() if s.autocal_due]
+            for n in due:
+                self.slots[n].autocal_due = False
+                self.slots[n].autocal_at = time.time()
+        for n in due:
+            try:
+                self.calibrate_slot(n, auto=True)
+            except Exception:
+                log.exception("calibração automática do slot %s falhou", n)
+
     def panels_tick(self, next_due: dict[int, float], now: float | None = None) -> None:
+        self._run_due_autocal()
         cfg = self.cfg
         if not cfg.panels.enabled:
             return
@@ -225,12 +282,18 @@ class Engine:
             s = self.slots.get(slot)
             return None if s is None or s.frame is None else s.frame.copy()
 
-    def _on_remote(self, text: str) -> list[tuple[str, bytes | None]]:
+    def _on_remote(self, text: str, chat_id: int = 0) -> list[tuple]:
         cmd = parse(text)
         if cmd is None:
             return [("Não entendi esse pedido.\n\n" + HELP, None)]
         self.bus.emit("info", f"pedido pelo Telegram: {cmd.name}" + (f" {cmd.slot}" if cmd.slot else ""))
-        return [(r.text, r.image) for r in self.remote.handle(cmd)]
+        return [(r.text, r.image, r.buttons) for r in self.remote.handle(cmd, chat_id)]
+
+    def _on_button(self, data: str, chat_id: int) -> tuple[str, tuple | None]:
+        toast, reply = self.remote.on_button(data, chat_id)
+        if toast:
+            self.bus.emit("info", f"Telegram: pedidos agora respondem de {self.remote.target_name(chat_id)}")
+        return toast, (reply.text, reply.buttons) if reply else None
 
     # ------------------------------------------------------------------ um ciclo
     def cycle(self) -> None:
@@ -341,9 +404,12 @@ class Engine:
             s.thumb = cv2.resize(img, (THUMB_W, int(h * THUMB_W / w)), interpolation=cv2.INTER_AREA)
             reader = self._reader_for(frame.size)
             if reader is None:
-                o.note = f"sem perfil para {w}x{h}: abra a Calibração"
+                o.note = f"sem perfil para {w}x{h}: calibrando automaticamente"
+                self._want_autocal(s, now)
             else:
-                r = reader.read(img)
+                ht_hit = self.panels.hit(s.n, "caca")  # janela de caça desta janela, onde quer que esteja
+                fields = DEFAULT_FIELDS if ht_hit is None else tuple(f for f in DEFAULT_FIELDS if f != "hunting_time")
+                r = reader.read(img, fields)
                 for fname, fr in r.fields.items():
                     if fr.raw.startswith("erro:") and (fname, fr.raw) not in self._read_errors:
                         self._read_errors.add((fname, fr.raw))  # registra cada erro diferente uma vez
@@ -355,9 +421,17 @@ class Engine:
                 o.exp = r.value("exp")
                 o.coords = r.value("coords")
                 o.map = r.value("map")
-                o.hunting_time = r.value("hunting_time")
+                if ht_hit is not None:
+                    fr = reader.read_field_at(img, "hunting_time", hunting_time_roi(ht_hit, frame.size))
+                    o.hunting_time = fr.value if fr.ok else None
+                else:
+                    o.hunting_time = r.value("hunting_time")
                 if o.hp is None and o.exp is None:
                     o.note = "HUD ilegível (menu, loading ou janela por cima)"
+                bad = any(r.fields[f].status == "unreadable" for f in ("hp", "exp") if f in r.fields)
+                s.hud_bad = s.hud_bad + 1 if bad else 0
+                if s.hud_bad >= AUTOCAL_BAD_CYCLES:
+                    self._want_autocal(s, now)
         if o.note != getattr(s, "_last_note", ""):
             s._last_note = o.note
             if o.note:
@@ -475,7 +549,7 @@ class Engine:
         if tg.enabled and tg.commands and tg.chats:
             # pedidos pelo celular: só das conversas cadastradas no app
             self.listener = TelegramCommandListener({c.chat_id for c in tg.chats}, self._on_remote,
-                                                    KEYBOARD, BOT_COMMANDS)
+                                                    KEYBOARD, BOT_COMMANDS, on_button=self._on_button)
             if self.telegram:
                 self.telegram.supports_inbound = True  # dá para responder /ok (para os lembretes, se ligados)
         local = self.local_notifiers if self.cfg.notifiers.windows.enabled else []

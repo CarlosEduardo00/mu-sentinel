@@ -96,6 +96,30 @@ def test_layout2_ocr_noise_in_labels_and_values(layout2):
     assert r["inventario"].data["used"] == 48
 
 
+def test_1280x960_scale_measured_and_full_crop(ocr):
+    """1024x768 no jogo com escala 125% do Windows: a interface fica ~1,5x maior que em 800x600.
+    A escala vem da distância título → textos fixos; antes o recorte saía pequeno e cortado."""
+    img = cv2.imread(str(FIX / "c_i_cacada_1280.png"))
+    hits, boxes = P.scan(img, ocr)
+    assert set(hits) == {"personagem", "inventario", "caca"}
+    for h in hits.values():
+        assert 1.4 < h.scale < 1.6
+    inv = P.read("inventario", img, hits["inventario"], ocr, boxes)
+    x0, y0, x1, y1 = hits["inventario"].rect
+    assert x0 < 460 and x1 > 820 and y1 > 840  # pega do título até o Zen
+    assert (inv.data["used"], inv.data["zen"]) == (40, 186_404_204)
+    c = P.read("personagem", img, hits["personagem"], ocr, boxes).data
+    assert (c["level"], c["ptsremaining"], c["agility"]) == (284, 48, 402)
+    h = P.read("caca", img, hits["caca"], ocr, boxes).data
+    assert (h["tempo_s"], h["gainedexp"]) == (27 * 60 + 46, 2848)
+
+    shop = cv2.imread(str(FIX / "loja_gremory_1280.png"))
+    sh, sb = P.scan(shop, ocr)
+    r = P.read("loja", shop, sh["loja"], ocr, sb)
+    assert (r.data["count"], r.data["cap"], r.data["aba_ok"]) == (0, 150, True)
+    assert P.read_shop_counter(shop, sh["loja"], ocr) == (0, 150)
+
+
 def test_reads_gremory_counter_and_tab(imgs, scanned, ocr):
     img = imgs["loja_gremory"]
     hits, boxes = scanned["loja_gremory"]
@@ -198,6 +222,7 @@ def test_shop_sale_needs_two_reads_and_ignores_withdrawals(service, imgs, monkey
         return None if v is None else (v, 150)
 
     monkeypatch.setattr(panels_mod.P, "read_shop_counter", fake_counter)
+    monkeypatch.setattr(panels_mod.P, "same_image", lambda a, b, tol=4.0: False)  # o contador "mudou" sempre
     got = []
     for _ in range(9):
         got.append([e for e in _check(service, imgs["loja_gremory"], 1, is_shop=True) if e.kind == "venda"])
@@ -205,6 +230,18 @@ def test_shop_sale_needs_two_reads_and_ignores_withdrawals(service, imgs, monkey
     assert sales == [3, 8]  # 0→1 confirmado na 2ª leitura; retirada (→0) não avisa; 0→2 de novo
     assert "0 → 1 de 150" in got[3][0].detail and got[3][0].image[:2] == b"\xff\xd8"
     assert "+2 itens" in got[8][0].detail
+
+
+def test_shop_counter_skips_ocr_when_unchanged(service, imgs, monkeypatch):
+    calls = []
+
+    def fake_counter(img, hit, ocr):
+        calls.append(1)
+        return (0, 150)
+
+    monkeypatch.setattr(panels_mod.P, "read_shop_counter", fake_counter)
+    _check(service, imgs["loja_gremory"], 6, is_shop=True)
+    assert len(calls) == 1  # mesma imagem do contador: OCR só na primeira leitura
 
 
 def test_inventory_report_tracks_changes(service, imgs):
@@ -322,6 +359,33 @@ def test_remote_status_and_ok(remote):
     st = rc.handle(parse("/status"))[0].text
     assert 'Slot 1 "Elf" — CAÇANDO' in st and "EXP/h 5,0 mi (2,5%/h)" in st and "(loja)" in st
     assert "visto" in rc.handle(parse("ok"))[0].text and eng.acked == 1
+
+
+def test_remote_target_picker_and_filter(remote, tmp_path):
+    rc, eng = remote
+    rc._store = tmp_path / "alvo.json"
+    pick = rc.handle(parse("🎯 Escolher personagem"), chat_id=111)[0]
+    labels = [label for row in pick.buttons for label, _ in row]
+    assert labels == ["✓ Todos", "1 · Elf", "2 · Loja"] and "Agora: Todos" in pick.text
+    toast, new = rc.on_button("alvo:1", 111)
+    assert toast == "Agora: 1 · Elf" and "✓ 1 · Elf" in [label for row in new.buttons for label, _ in row]
+    st = rc.handle(parse("/status"), chat_id=111)[0].text
+    assert 'Slot 1 "Elf"' in st and 'Slot 2' not in st  # só o escolhido
+    assert len(rc.handle(parse("/print"), chat_id=111)) == 1
+    assert 'Slot 2' in rc.handle(parse("/status"), chat_id=222)[0].text  # outra conversa: todos
+    assert rc.handle(parse("/print 2"), chat_id=111)[0].text.startswith('Slot 2')  # número digitado manda
+    # a escolha sobrevive a reiniciar o app
+    again = RemoteCommands(eng, store=rc._store)
+    assert again.target_name(111) == "1 · Elf"
+    rc.on_button("alvo:0", 111)
+    assert rc.target_name(111) == "Todos"
+
+
+def test_remote_target_not_open(remote):
+    rc, _ = remote
+    rc.targets[5] = 7
+    out = rc.handle(parse("/inventario"), chat_id=5)
+    assert "não está aberto agora" in out[0].text and "Escolher personagem" in out[0].text
 
 
 def test_remote_print(remote):

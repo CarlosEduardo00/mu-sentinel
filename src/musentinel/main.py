@@ -47,6 +47,22 @@ def load_config():
     return cfg, None
 
 
+def lower_priority() -> None:
+    """O jogo vem primeiro: o MU Sentinel roda com prioridade abaixo do normal e o OpenCV num núcleo."""
+    try:
+        import psutil
+
+        psutil.Process().nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+    except Exception:
+        log.debug("não consegui baixar a prioridade do processo", exc_info=True)
+    try:
+        import cv2
+
+        cv2.setNumThreads(1)
+    except Exception:
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="musentinel")
     ap.add_argument("--minimizado", action="store_true", help="começa só na bandeja")
@@ -64,6 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     from .core.logsetup import setup_logging
 
     winapi.enable_dpi_awareness()
+    lower_priority()
     mutex = single_instance() if not a.smoke_test else object()
 
     from PySide6.QtWidgets import QApplication, QMessageBox

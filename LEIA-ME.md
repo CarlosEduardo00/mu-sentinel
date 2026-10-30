@@ -28,8 +28,21 @@ Mais um motivo para usar só sabendo do risco.
 ## Requisitos
 
 - Windows 10 ou 11, 64 bits. Não precisa instalar Python nem mais nada.
-- MU Online aberto em janela. Perfis prontos para a janela de **800x600** (escala do Windows em 100%)
-  e **1280x960** (800x600 com escala em 125%). Outro tamanho: use *Arquivo → Calibração*.
+- MU Online aberto em janela, em qualquer resolução. Para 800x600 e 1024x768 (com escala de 125% do Windows a
+  janela fica 1280x960) já vem perfil pronto. Em outro tamanho o app **se calibra sozinho** (veja abaixo).
+
+## Calibração automática
+
+O app lê a tela de cada janela com um leitor completo (mais lento) e ensina o leitor rápido do HUD: HP, EXP,
+mapa, coordenadas e o tempo de caça (na janela de caça, onde quer que você a deixe). Acontece sozinho:
+
+- quando abre uma janela de um tamanho que ainda não tem perfil;
+- quando o HUD de uma janela fica ilegível por uns 30 s (no máximo 1 vez a cada 10 min por janela).
+
+Também dá para pedir com o app aberto: botão **Calibrar** no quadro de cada janela, ou *Arquivo → Calibrar
+todas as janelas agora*. Use depois de mudar a resolução ou o layout. Aparece um resumo do que foi lido e
+aprendido. Calibrar de novo com outros números na tela (ex.: depois de tomar dano) ensina dígitos que faltam.
+Os painéis (C, I, caçada, Gremory) se ajustam sozinhos a qualquer resolução.
 
 ## Instalar
 
@@ -82,6 +95,7 @@ Só as conversas da lista do app são atendidas:
 | `/loja` | Gremory Case da janela **Loja** (quantos itens entraram) |
 | `/ok` | Para os lembretes dos alertas críticos (se estiverem ligados) |
 | `/pausar 60` · `/retomar` | Pausa os alertas por 60 min / volta |
+| 🎯 **Escolher personagem** (`/alvo`) | Escolhe de qual personagem os pedidos respondem: um só ou **Todos**. Fica valendo até você trocar; um número digitado (`/inventario 2`) vale só para aquele pedido |
 
 O MU Sentinel **não aperta teclas** no jogo: os painéis precisam estar **abertos por você** (C, I, a janela de
 caça). Ele acha cada painel pelo título, em qualquer lugar da tela, então pode arrumar as janelas do jeito que
@@ -146,7 +160,9 @@ Para usar tudo dentro da própria pasta do app (pendrive), crie um arquivo vazio
 | --- | --- |
 | "Failed to load Python DLL … python312.dll" | O exe foi aberto de dentro do zip ou separado da pasta `_internal`. Extraia o zip inteiro (Instalar, passo 1) |
 | "Monitoramento limitado pelo anti-cheat" | É o GameGuard (veja acima). O app segue pela imagem; não há o que configurar |
-| "sem perfil para LxA" no card | A janela tem um tamanho sem perfil: deixe o client em 800x600 ou calibre em *Arquivo → Calibração* |
+| "sem perfil para LxA" no card | Tamanho novo: o app calibra sozinho em alguns segundos. Se não resolver, clique em **Calibrar** no quadro da janela |
+| HP/EXP ilegível ou errado depois de mudar resolução | Clique em **Calibrar** no quadro da janela (com o HUD visível, sem menu por cima) |
+| PC lento ou barulhento com o app aberto | Atualize: a versão nova usa cerca de 15% de um núcleo e ~250 MB (antes: 3 núcleos e ~750 MB) |
 | Telegram: "token inválido" | Copie de novo o token inteiro que o @BotFather mandou |
 | Pedido responde "não está aberto" | Abra o painel no jogo (C, I, janela de caça, Gremory Case) e deixe aberto |
 | Telegram: "outra cópia do MU Sentinel está lendo as mensagens" | O mesmo bot está em dois PCs: cada PC precisa do próprio bot |

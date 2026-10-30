@@ -59,6 +59,20 @@ SPECS: dict[str, _Spec] = {
                          _Anchor("strength", -6, -128, 16)), (-32, -84, 250, 389)),
 }
 
+# Textos fixos de cada painel e a distância vertical (px em 800x600) do ponto de referência até eles.
+# A escala real do painel = distância medida / distância em 800x600 (mediana de vários): vale para
+# qualquer resolução e escala do Windows, janela por janela.
+LANDMARKS: dict[str, tuple[tuple[str, float], ...]] = {
+    "inventario": (("repair", 276.5), ("disassemb", 301.5), ("bundle", 325), ("divide", 350),
+                   ("personals", 375), ("expanded", 400.5)),
+    "loja": (("character", 107), ("myserver", 106), ("mumobile", 105.5), ("personalsh", 105.5)),
+    "caca": (("normaldmgpersecond", 65.5), ("elementaldmgpersecond", 82.5), ("healamountpersecond", 100),
+             ("monsterkillspersecond", 117), ("gainedexppersecond", 134)),
+    "personagem": (("ptsremaining", 64.5), ("strength", 128), ("agility", 227.5), ("stamina", 342.5),
+                   ("energy", 360.5)),
+}
+MIN_LANDMARK_DY = 60  # distâncias menores medem a escala com pouca precisão
+
 # Inventário: grade 8x8 a partir do título
 INV_GRID = (-115.5, 260.5, 21.6, 8, 8)  # x0, y0, lado da célula, colunas, linhas
 INV_ZEN_BAND = (440, 475)  # faixa (y) da linha do Zen
@@ -83,8 +97,30 @@ class PanelHit:
 
 
 def _scale(h: float, ref_h: float) -> float:
+    """Escala pela altura do texto: só de reserva (a caixa do OCR varia uns pixels)."""
     s = h / ref_h if ref_h else 1.0
-    return 1.0 if 0.75 <= s <= 1.3 else s  # a altura da caixa do OCR varia uns pixels
+    return 1.0 if 0.85 <= s <= 1.15 else s
+
+
+def measure_scale(kind: str, anchor: TextBox, a: _Anchor, keys: list[tuple[TextBox, str]]) -> float | None:
+    """Escala do painel pela distância do título/âncora até textos fixos do mesmo painel."""
+    anchor_dy = -a.dy  # posição vertical da âncora em relação ao ponto de referência (800x600)
+    found = []
+    for want, dy in LANDMARKS.get(kind, ()):
+        span = dy - anchor_dy
+        if abs(span) < MIN_LANDMARK_DY:
+            continue
+        for b, k in keys:
+            if b is anchor or not _label_is(k, want, prefix=True):
+                continue
+            s = (b.cy - anchor.cy) / span
+            if 0.5 <= s <= 3.0 and abs(b.cx - anchor.cx) <= 320 * s:
+                found.append(s)
+                break
+    if not found:
+        return None
+    found.sort()
+    return found[len(found) // 2]
 
 
 def _matches(key: str, want: str) -> bool:
@@ -126,7 +162,7 @@ def locate(img: np.ndarray, boxes: list[TextBox], kinds=KINDS) -> dict[str, Pane
             if not cands:
                 continue
             b = max(cands, key=lambda c: c.score)
-            s = _scale(b.h, a.ref_h)
+            s = measure_scale(kind, b, a, keys) or _scale(b.h, a.ref_h)
             ref = (b.cx + a.dx * s, b.cy + a.dy * s)
             x0, y0, x1, y1 = spec.rect
             rect = (max(0, int(ref[0] + x0 * s)), max(0, int(ref[1] + y0 * s)),
@@ -435,8 +471,8 @@ def scan(img: np.ndarray, ocr: OcrEngine, kinds=KINDS) -> tuple[dict[str, PanelH
     return locate(img, boxes, kinds), boxes
 
 
-def read_shop_counter(img: np.ndarray, hit: PanelHit, ocr: OcrEngine) -> tuple[int, int] | None:
-    """Só o contador "N / 150" do Gremory Case (OCR de uma faixa pequena: barato)."""
+def shop_counter_crop(img: np.ndarray, hit: PanelHit) -> np.ndarray | None:
+    """Faixa do contador "N / 150" do Gremory Case."""
     lo, hi = SHOP_COUNTER_BAND
     x0, y0 = hit.rel(-70, lo)
     x1, y1 = hit.rel(70, hi)
@@ -444,7 +480,20 @@ def read_shop_counter(img: np.ndarray, hit: PanelHit, ocr: OcrEngine) -> tuple[i
     x0, y0, x1, y1 = max(0, x0), max(0, y0), min(w, x1), min(h, y1)
     if x1 - x0 < 20 or y1 - y0 < 10:
         return None
-    for b in ocr.detect(img[y0:y1, x0:x1]):
+    return img[y0:y1, x0:x1]
+
+
+def same_image(a: np.ndarray | None, b: np.ndarray | None, tol: float = 4.0) -> bool:
+    """Duas imagens pequenas iguais (diferença média de pixel abaixo de tol)?"""
+    return a is not None and b is not None and a.shape == b.shape and float(cv2.absdiff(a, b).mean()) < tol
+
+
+def read_shop_counter(img: np.ndarray, hit: PanelHit, ocr: OcrEngine) -> tuple[int, int] | None:
+    """Só o contador "N / 150" do Gremory Case (OCR de uma faixa pequena)."""
+    band = shop_counter_crop(img, hit)
+    if band is None:
+        return None
+    for b in ocr.detect(band):
         m = _COUNTER.search(b.text.replace(" ", ""))
         if m and int(m.group(2)) >= int(m.group(1)):
             return int(m.group(1)), int(m.group(2))

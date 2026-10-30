@@ -186,7 +186,7 @@ def test_listener_answers_only_listed_chats():
     clk = Clock()
     asked = []
 
-    def handler(text):
+    def handler(text, chat_id):
         asked.append(text)
         return [("legenda", b"\xff\xd8jpg"), ("texto", None)]
 
@@ -209,7 +209,7 @@ def test_listener_skips_old_messages_and_keeps_offset():
 
     clk = Clock()
     post = FakePost([(200, {"ok": True, "result": [_upd(40, 111, "/status", clk() - 3600)]})])
-    lst = _listener(post, lambda t: [("x", None)], clk)
+    lst = _listener(post, lambda t, c: [("x", None)], clk)
     assert lst.poll_once(TelegramApi(TOKEN, post)) == 0 and lst._offset == 41
     post.responses = [(200, {"ok": True, "result": []})]
     lst.poll_once(TelegramApi(TOKEN, post))
@@ -221,7 +221,7 @@ def test_listener_handler_error_still_replies():
 
     clk = Clock()
 
-    def boom(text):
+    def boom(text, chat_id):
         raise RuntimeError("falhou")
 
     post = FakePost([(200, {"ok": True, "result": [_upd(1, 111, "/status", clk())]})])
@@ -234,7 +234,7 @@ def test_find_chats_uses_listener_memory_while_running():
 
     clk = Clock()
     post = FakePost([(200, {"ok": True, "result": [_upd(1, 333, "/start", clk(), "Amigo")]})])
-    lst = _listener(post, lambda t: [], clk)
+    lst = _listener(post, lambda t, c: [], clk)
     lst._mark(True)
     try:
         lst.poll_once(tg.TelegramApi(TOKEN, post))
@@ -256,3 +256,27 @@ def test_conflict_409_is_explained():
         assert exc.kind == "retry" and "outra cópia" in exc.description
     else:
         raise AssertionError("esperava erro")
+
+
+def test_listener_button_updates_message():
+    from musentinel.core.notifiers.telegram import TelegramApi, TelegramCommandListener
+
+    clk = Clock()
+    seen = []
+
+    def on_button(data, chat_id):
+        seen.append((data, chat_id))
+        return "Agora: 2 · Elf", ("🎯 Agora: 2 · Elf", [[("✓ 2 · Elf", "alvo:2")]])
+
+    cq = {"update_id": 9, "callback_query": {"id": "cb1", "data": "alvo:2",
+                                             "message": {"message_id": 77, "chat": {"id": 111}}}}
+    stranger = {"update_id": 10, "callback_query": {"id": "cb2", "data": "alvo:1",
+                                                    "message": {"message_id": 5, "chat": {"id": 999}}}}
+    post = FakePost([(200, {"ok": True, "result": [cq, stranger]})])
+    lst = TelegramCommandListener({111}, lambda t, c: [], http_post=post, on_button=on_button,
+                                  token_lookup=lambda k: TOKEN, clock=clk, start=False)
+    lst.poll_once(TelegramApi(TOKEN, post))
+    assert seen == [("alvo:2", 111)]  # a conversa de fora não muda nada
+    calls = [(u.rsplit("/", 1)[1], d) for u, d, _ in post.calls[1:]]
+    assert [m for m, _ in calls] == ["answerCallbackQuery", "editMessageText", "answerCallbackQuery"]
+    assert calls[1][1]["message_id"] == "77" and "alvo:2" in calls[1][1]["reply_markup"]

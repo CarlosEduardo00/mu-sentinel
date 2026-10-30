@@ -57,6 +57,20 @@ de Credenciais.
 no bot. Só conversas da lista do app são atendidas; mensagens enviadas com o app fechado são ignoradas.
 Nada disso mexe no jogo: os comandos leem a imagem e controlam os alertas do próprio app.
 
+## Calibração automática e consumo
+
+- `core/perception/autocal.py`: o OCR da tela inteira acha mapa, coordenadas, HP, EXP (também quando vem em
+  dois pedaços) e o tempo de caça; vira gabarito para criar/esticar ROIs e ensinar o leitor de glifos
+  (`training.learn_sample`). Dispara sozinho (tamanho sem perfil; HP/EXP ilegível ~30 s, no máx. 1×/10 min por
+  janela, na thread dos painéis) ou pelo botão **Calibrar** / *Arquivo → Calibrar todas*. Salva o perfil do
+  usuário daquele tamanho e recarrega os leitores.
+- Tempo de caça é lido na posição do Instant Hunting Log de cada janela (`HudReader.read_field_at`).
+- Escala dos painéis medida pela distância título → textos fixos (`perception/panels.LANDMARKS`): 1024x768 com
+  escala de 125% dá ~1,5x.
+- Consumo (i5 16 núcleos, 3 janelas 1280x960): OpenBLAS em 1 thread (o import do numpy reservava ~490 MB),
+  OCR em 2 threads sem *spinning*, OpenCV em 1 thread, prioridade do processo abaixo do normal, WGC a 1 quadro/s,
+  contador da Loja só faz OCR quando a imagem muda. Medido: de ~308% de CPU e 723 MB privados para ~15% e 234 MB.
+
 ## Painéis abertos no jogo e Loja
 
 O usuário deixa abertos Personagem (C), Inventário (I), Instant Hunting Log e, na janela chamada **Loja**,
