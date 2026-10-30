@@ -26,7 +26,7 @@ para refazer: *Arquivo → Assistente de configuração* ou `--assistente`.
 ## Gerar o executável para os amigos
 
 ```powershell
-.uild.ps1
+.\build.ps1
 ```
 
 Cria um venv limpo, roda os testes, gera `dist\MUSentinel\` (PyInstaller onedir, sem UPX), faz o
