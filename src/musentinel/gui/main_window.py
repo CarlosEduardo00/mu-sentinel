@@ -433,6 +433,13 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ atualizações
     def on_snapshots(self, snaps: list[SlotSnapshot]) -> None:
+        self._last_snaps = snaps
+        self._update_tray_icon(snaps)
+        if not self.isVisible() or self.isMinimized():
+            return  # escondido na bandeja/minimizado: não redesenha miniaturas à toa (economiza CPU)
+        self._render(snaps)
+
+    def _render(self, snaps: list[SlotSnapshot]) -> None:
         active = {k[0] for k in self.engine.alerts.active}
         for s in snaps:
             card = self.cards.get(s.slot)
@@ -441,6 +448,8 @@ class MainWindow(QMainWindow):
                 self._relayout()
             card.update_from(s, s.slot in active)
         self.empty.setVisible(not self.cards)
+
+    def _update_tray_icon(self, snaps: list[SlotSnapshot]) -> None:
         worst = "#2e9d47"
         if any(s.state in CRITICAL for s in snaps):
             worst = "#c62828"
@@ -459,6 +468,19 @@ class MainWindow(QMainWindow):
             self.grid.removeWidget(card)
         for i, (n, card) in enumerate(sorted(self.cards.items())):
             self.grid.addWidget(card, i // cols, i % cols)
+
+    def showEvent(self, e):  # noqa: N802
+        super().showEvent(e)
+        if getattr(self, "_last_snaps", None):
+            self._render(self._last_snaps)  # voltou da bandeja: mostra o estado mais recente na hora
+
+    def changeEvent(self, e):  # noqa: N802
+        super().changeEvent(e)
+        from PySide6.QtCore import QEvent
+
+        if e.type() == QEvent.Type.WindowStateChange and not self.isMinimized() \
+                and getattr(self, "_last_snaps", None):
+            self._render(self._last_snaps)
 
     def resizeEvent(self, e):  # noqa: N802
         super().resizeEvent(e)
@@ -588,7 +610,7 @@ class MainWindow(QMainWindow):
         """Calibração automática (OCR completo da tela) de uma ou de todas as janelas, sem travar a tela."""
         if self.calibrating:
             return
-        nums = slots if slots is not None else sorted(self.cards)
+        nums = slots if slots is not None else sorted(self.engine.slots)
         if not nums:
             QMessageBox.information(self, "Calibrar", "Nenhuma janela do MU aberta agora.")
             return
