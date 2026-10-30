@@ -18,6 +18,7 @@ dependencies = [
     "PySide6",
     "rapidocr-onnxruntime",
     "keyring",
+    "httpx",
 ]
 
 [project.optional-dependencies]

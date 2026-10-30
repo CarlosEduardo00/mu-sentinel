@@ -47,6 +47,8 @@ Step "PyInstaller (onedir, sem UPX)"
 & $vpy -m PyInstaller --noconfirm --clean musentinel.spec; Check "PyInstaller"
 $out = "dist\MUSentinel"
 Copy-Item LEIA-ME.md $out
+# Aparece em primeiro ao lado do exe para quem abre o zip sem extrair
+Copy-Item packaging\EXTRAIA-ANTES.txt "$out\!! EXTRAIA O ZIP ANTES DE ABRIR !!.txt"
 
 if ($env:MUSENTINEL_SIGN_CMD) {
     Step "Assinando o executável"

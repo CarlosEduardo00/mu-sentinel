@@ -1,0 +1,17 @@
+MU SENTINEL - EXTRAIA O ZIP ANTES DE ABRIR
+==========================================
+
+Abrir o MUSentinel.exe direto de dentro do .zip NÃO funciona
+(aparece o erro "Failed to load Python DLL ... python312.dll").
+
+Como fazer:
+1. Feche esta janela e volte para o arquivo .zip.
+2. Clique com o botão direito no .zip -> "Extrair tudo..." -> escolha uma pasta
+   (ex.: C:\Jogos\MUSentinel) -> Extrair.
+3. Na pasta extraída, abra o MUSentinel.exe.
+
+Mantenha o MUSentinel.exe junto com a pasta _internal: ele precisa dela para abrir.
+Se quiser um atalho na Área de Trabalho: botão direito no MUSentinel.exe ->
+"Mostrar mais opções" -> "Enviar para" -> "Área de trabalho (criar atalho)".
+
+Mais detalhes no LEIA-ME.md.

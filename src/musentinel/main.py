@@ -129,11 +129,24 @@ def smoke_test(cfg, bus, store) -> int:
     result = {"rc": 1}
     win = MainWindow(cfg, bus, start_hidden=True)
 
+    def packaged_ok() -> tuple[bool, str]:
+        """Peças carregadas só na hora do uso: envio (httpx) e cofre de senhas do Windows."""
+        try:
+            import httpx  # noqa: F401  (Telegram e WhatsApp)
+            import keyring
+
+            backend = type(keyring.get_keyring()).__name__
+        except Exception as exc:
+            return False, type(exc).__name__
+        return "fail" not in backend.lower() and "null" not in backend.lower(), backend
+
     def check():
-        ok = win.engine.last_cycle > 0
+        deps_ok, keyring_name = packaged_ok()
+        ok = win.engine.last_cycle > 0 and deps_ok
         result["rc"] = 0 if ok else 2
         (paths.data_dir() / "smoke_test.txt").write_text(
-            f"ok={ok} ciclo_ms={win.engine.cycle_ms:.0f} slots={len(win.engine.slots)}\n", encoding="utf-8")
+            f"ok={ok} ciclo_ms={win.engine.cycle_ms:.0f} slots={len(win.engine.slots)} "
+            f"envio={'ok' if deps_ok else 'FALTANDO'} cofre={keyring_name}\n", encoding="utf-8")
         win.engine.stop()
         win.tray.hide()
         QApplication.quit()

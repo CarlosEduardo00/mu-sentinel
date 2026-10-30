@@ -33,8 +33,11 @@ Mais um motivo para usar só sabendo do risco.
 
 ## Instalar
 
-1. Descompacte o `.zip` numa pasta sua (ex.: `C:\Jogos\MUSentinel`). Não precisa ser em Arquivos de Programas.
-2. Abra **MUSentinel.exe**.
+1. **Extraia o `.zip` antes de abrir:** botão direito no `.zip` → **Extrair tudo…** → escolha uma pasta sua
+   (ex.: `C:\Jogos\MUSentinel`). Não precisa ser em Arquivos de Programas.
+   Abrir o exe direto de dentro do zip dá o erro *"Failed to load Python DLL … python312.dll"*.
+2. Na pasta extraída, abra **MUSentinel.exe**. Ele precisa ficar junto da pasta `_internal`; para ter um
+   ícone na Área de Trabalho, crie um **atalho** em vez de mover o exe.
 3. Se o Windows mostrar **"O Windows protegeu o computador"** (SmartScreen): clique em
    **Mais informações → Executar assim mesmo**. Isso aparece porque o app não tem assinatura digital.
 
@@ -104,6 +107,7 @@ Para usar tudo dentro da própria pasta do app (pendrive), crie um arquivo vazio
 
 | Sintoma | O que fazer |
 | --- | --- |
+| "Failed to load Python DLL … python312.dll" | O exe foi aberto de dentro do zip ou separado da pasta `_internal`. Extraia o zip inteiro (Instalar, passo 1) |
 | "Monitoramento limitado pelo anti-cheat" | É o GameGuard (veja acima). O app segue pela imagem; não há o que configurar |
 | "sem perfil para LxA" no card | A janela tem um tamanho sem perfil: deixe o client em 800x600 ou calibre em *Arquivo → Calibração* |
 | Telegram: "token inválido" | Copie de novo o token inteiro que o @BotFather mandou |
