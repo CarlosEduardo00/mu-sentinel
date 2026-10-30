@@ -103,6 +103,8 @@ class Engine:
         self.started_at = time.time()
         self.last_cycle = 0.0
         self.cycle_ms = 0.0
+        self.cycle_ms_max = 0.0  # ciclo mais lento depois do aquecimento
+        self._cycles = 0
         self.outage_active = False
         self.power_warnings: list[str] = []
         self.elevated_game = False
@@ -153,6 +155,9 @@ class Engine:
                     self.alerts.flush()
                 self.last_cycle = time.time()
                 self.cycle_ms = (self.last_cycle - t0) * 1000
+                self._cycles += 1
+                if self._cycles > 3:  # os primeiros carregam o OCR
+                    self.cycle_ms_max = max(self.cycle_ms_max, self.cycle_ms)
                 self._stop.wait(max(0.05, self.cfg.monitor.interval_s - (time.time() - t0)))
         finally:
             power.release_awake()
@@ -161,6 +166,8 @@ class Engine:
 
     # ------------------------------------------------------------------ painéis (thread própria)
     PANEL_LIVE = (State.ONLINE, State.CACANDO, State.PARADO)
+    PANEL_FIRST_S = 15.0  # primeira checagem de painéis depois de achar a janela
+    PANEL_STAGGER_S = 5.0  # e um slot de cada vez
 
     def _panels_run(self) -> None:
         next_due: dict[int, float] = {}
@@ -178,7 +185,9 @@ class Engine:
         with self._lock:
             due = []
             for n, s in self.slots.items():
-                if s.frame is None or now < next_due.get(n, 0.0):
+                if n not in next_due:  # slot novo: começa depois de o monitor assentar, um slot por vez
+                    next_due[n] = now + self.PANEL_FIRST_S + self.PANEL_STAGGER_S * len(next_due)
+                if s.frame is None or now < next_due[n]:
                     continue
                 shop = cfg.is_shop(n)
                 next_due[n] = now + (cfg.panels.shop_interval_s if shop else cfg.panels.interval_s)
@@ -468,7 +477,7 @@ class Engine:
             self.listener = TelegramCommandListener({c.chat_id for c in tg.chats}, self._on_remote,
                                                     KEYBOARD, BOT_COMMANDS)
             if self.telegram:
-                self.telegram.supports_inbound = True  # dá para responder /ok: crítico repete até o ok
+                self.telegram.supports_inbound = True  # dá para responder /ok (para os lembretes, se ligados)
         local = self.local_notifiers if self.cfg.notifiers.windows.enabled else []
         self.alerts.set_notifiers(local + [n for n in (self.callmebot, self.telegram) if n])
 

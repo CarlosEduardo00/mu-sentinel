@@ -102,7 +102,9 @@ As chaves ficam no Gerenciador de Credenciais do Windows (nunca no `config.yaml`
 Também avisa: Helper parou (Hunting Time parado), HP abaixo de 30%.
 
 - Um estado novo só vale após 2 ciclos seguidos iguais (ciclo de 2 s).
-- Crítico repete a cada 5 min (no máximo 3 vezes no CallMeBot) até você clicar **OK, vi o alerta**.
+- Uma mensagem por acontecimento (e outra quando resolve). Lembrete opcional (`alertas.lembrete_critico`):
+  "LEMBRETE: X continua" a cada 5 min, sem repetir o print, até o `/ok` (Telegram) ou **OK, vi o alerta**;
+  no máximo 3 se só houver CallMeBot.
 - Mesmo alerta do mesmo slot: no máximo 1× a cada 5 min. Vários alertas no mesmo ciclo saem numa mensagem só.
 - 2+ slots desconectados juntos (ou internet fora): **um** alerta só, dizendo se a internet deste PC caiu.
 - Horário silencioso (opcional) vale só para o WhatsApp; críticos passam por padrão.

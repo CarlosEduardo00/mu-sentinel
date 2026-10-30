@@ -71,8 +71,8 @@ def test_each_recipient_gets_message_with_own_key():
     drain(n, clk)
     assert len(http.urls) == 2
     q = [parse_qs(urlparse(u).query) for u in http.urls]
-    assert q[0]["phone"] == ["+5511999990001"] and q[0]["apikey"] == ["111111"]
-    assert q[1]["phone"] == ["+5521988880002"] and q[1]["apikey"] == ["222222"]
+    assert q[0]["phone"] == ["5511999990001"] and q[0]["apikey"] == ["111111"]
+    assert q[1]["phone"] == ["5521988880002"] and q[1]["apikey"] == ["222222"]
     assert q[0]["text"] == ["[CRÍTICO] MORTE - Slot 1 · HP 0/807"]
 
 
@@ -137,6 +137,14 @@ def test_url_encoding():
     u = build_url("5511999990001", "a & b · ç\nlinha 2", "k&y")
     q = parse_qs(urlparse(u).query)
     assert q["text"] == ["a & b · ç\nlinha 2"] and q["apikey"] == ["k&y"]
+    assert q["phone"] == ["5511999990001"]  # só dígitos, como no link de teste do próprio bot
+
+
+def test_send_now_shows_what_callmebot_said_without_key():
+    body = "<p>Message queued. You will receive it in a few seconds. apikey 111111</p>"
+    n = CallMeBotNotifier(recips(), http_get=lambda url, t: (200, body), key_lookup=KEYS.get, start=False)
+    ok, msg = n.send_now(recips()[0], "teste")
+    assert ok and "Message queued" in msg and "111111" not in msg
 
 
 # ---------------------------------------------------------------- config

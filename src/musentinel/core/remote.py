@@ -55,7 +55,7 @@ BOT_COMMANDS = [  # menu "/" do Telegram (só letras minúsculas, dígitos e _)
     ("personagem", "Janela C: level e pontos"),
     ("cacada", "Instant Hunting Log: tempo e EXP/h"),
     ("loja", "Gremory Case da janela Loja"),
-    ("ok", "Parar de repetir os alertas críticos"),
+    ("ok", "Marcar os alertas críticos como vistos"),
     ("pausar", "Pausar os alertas (ex.: /pausar 60)"),
     ("retomar", "Retomar os alertas"),
     ("ajuda", "O que dá para pedir"),
@@ -68,7 +68,7 @@ HELP = """MU Sentinel — o que dá para pedir (use os botões ou digite):
 /personagem 2 — janela C: level, pontos a distribuir, atributos
 /cacada 2 — Instant Hunting Log: tempo de caça, EXP/h, abates
 /loja — Gremory Case do slot Loja (vendas)
-/ok — para de repetir os alertas críticos
+/ok — marca os alertas críticos como vistos (para os lembretes, se ligados)
 /pausar 60 — pausa os alertas por 60 min · /retomar
 
 Os painéis precisam estar abertos no jogo: o MU Sentinel só olha a tela, não aperta teclas."""
@@ -125,8 +125,8 @@ class RemoteCommands:
                 return self._panel(cmd.name, cmd.slot)
             if cmd.name == "ok":
                 n = self.engine.ack()
-                return [Reply(f"✅ {n} alerta(s) reconhecido(s): paro de repetir." if n
-                              else "Nenhum alerta crítico repetindo agora.")]
+                return [Reply(f"✅ {n} alerta(s) marcado(s) como visto(s)." if n
+                              else "Nenhum alerta crítico em aberto agora.")]
             if cmd.name == "pausar":
                 mins = cmd.slot if cmd.slot else 60
                 self.engine.pause_alerts(float(mins))

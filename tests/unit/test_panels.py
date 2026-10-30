@@ -290,7 +290,7 @@ def test_remote_status_and_ok(remote):
     rc, eng = remote
     st = rc.handle(parse("/status"))[0].text
     assert 'Slot 1 "Elf" — CAÇANDO' in st and "EXP/h 5,0 mi (2,5%/h)" in st and "(loja)" in st
-    assert "reconhecido" in rc.handle(parse("ok"))[0].text and eng.acked == 1
+    assert "visto" in rc.handle(parse("ok"))[0].text and eng.acked == 1
 
 
 def test_remote_print(remote):

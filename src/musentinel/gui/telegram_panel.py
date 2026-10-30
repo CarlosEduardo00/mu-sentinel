@@ -30,7 +30,7 @@ busca as conversas de novo. Cada amigo, no PC dele, cria o próprio bot.
 """
 
 COMMANDS_HELP = ("Pedidos pelo celular (botões no bot ou digitando): /status, /print 2, /inventario, /personagem, "
-                 "/cacada, /loja, /ok (para de repetir o alerta), /pausar 60, /retomar. Os painéis precisam "
+                 "/cacada, /loja, /ok (alerta visto), /pausar 60, /retomar. Os painéis precisam "
                  "estar abertos no jogo: o app só olha a tela, não aperta teclas.")
 
 

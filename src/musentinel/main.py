@@ -140,13 +140,31 @@ def smoke_test(cfg, bus, store) -> int:
             return False, type(exc).__name__
         return "fail" not in backend.lower() and "null" not in backend.lower(), backend
 
+    def panels_ok() -> str:
+        """OCR da tela inteira (modelo de detecção), usado nos painéis: acha um título desenhado."""
+        try:
+            import cv2
+            import numpy as np
+
+            from .core.panels import OCR_THREADS
+            from .core.perception.ocr import OcrEngine
+
+            img = np.full((120, 400, 3), 30, np.uint8)
+            cv2.putText(img, "Inventory", (90, 70), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (230, 230, 230), 2)
+            boxes = OcrEngine(threads=OCR_THREADS).detect(img)
+            return "ok" if any("inventory" in b.key for b in boxes) else f"leu {[b.text for b in boxes]}"
+        except Exception as exc:
+            return type(exc).__name__
+
     def check():
         deps_ok, keyring_name = packaged_ok()
-        ok = win.engine.last_cycle > 0 and deps_ok
+        panels = panels_ok()
+        ok = win.engine.last_cycle > 0 and deps_ok and panels == "ok"
         result["rc"] = 0 if ok else 2
         (paths.data_dir() / "smoke_test.txt").write_text(
-            f"ok={ok} ciclo_ms={win.engine.cycle_ms:.0f} slots={len(win.engine.slots)} "
-            f"envio={'ok' if deps_ok else 'FALTANDO'} cofre={keyring_name}\n", encoding="utf-8")
+            f"ok={ok} ciclo_ms={win.engine.cycle_ms:.0f} ciclo_max_ms={win.engine.cycle_ms_max:.0f} "
+            f"slots={len(win.engine.slots)} paineis_vistos={sum(len(s.panels) for s in win.engine.snapshots())} "
+            f"envio={'ok' if deps_ok else 'FALTANDO'} cofre={keyring_name} paineis={panels}\n", encoding="utf-8")
         win.engine.stop()
         win.tray.hide()
         QApplication.quit()

@@ -345,6 +345,9 @@ class SettingsDialog(QDialog):
         a = self.cfg.alerts
         w = QWidget()
         f = QFormLayout(w)
+        self.a_remind = QCheckBox("Mandar lembrete do alerta crítico enquanto o problema continuar "
+                                  "(por padrão: uma mensagem só)")
+        self.a_remind.setChecked(a.repeat_critical)
         self.a_repeat = _spin(a.critical_repeat_min, 1, 120, 1, 0, " min")
         self.a_max = _spin(a.max_repeats_no_reply, 0, 20)
         self.a_cool = _spin(a.cooldown_min, 0, 120, 1, 0, " min")
@@ -356,8 +359,12 @@ class SettingsDialog(QDialog):
             q.setDisplayFormat("HH:mm")
         self.q_crit = QCheckBox("Deixar alertas críticos passarem no horário silencioso")
         self.q_crit.setChecked(a.quiet.allow_critical)
-        f.addRow("Repetir alerta crítico a cada:", self.a_repeat)
-        f.addRow("Máximo de repetições (sem resposta):", self.a_max)
+        f.addRow(self.a_remind)
+        f.addRow("Lembrete a cada:", self.a_repeat)
+        f.addRow("Máximo de lembretes (WhatsApp; no Telegram\nvai até você responder /ok):", self.a_max)
+        for wdg in (self.a_repeat, self.a_max):
+            wdg.setEnabled(a.repeat_critical)
+            self.a_remind.toggled.connect(wdg.setEnabled)
         f.addRow("Mesmo alerta do mesmo slot no máximo 1× a cada:", self.a_cool)
         f.addRow(self.q_on)
         f.addRow("Início:", self.q_start)
@@ -413,6 +420,7 @@ class SettingsDialog(QDialog):
             t.hung_s, t.frozen_s = self.t_hung.value(), self.t_frozen.value()
             t.unreadable_warn_min, t.city_grace_s = self.t_unread.value(), self.t_city.value()
             a = c.alerts
+            a.repeat_critical = self.a_remind.isChecked()
             a.critical_repeat_min, a.max_repeats_no_reply = self.a_repeat.value(), self.a_max.value()
             a.cooldown_min = self.a_cool.value()
             a.quiet.enabled = self.q_on.isChecked()

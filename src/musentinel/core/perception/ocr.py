@@ -65,7 +65,10 @@ class TextBox:
 class OcrEngine:
     """Carrega o modelo só quando for usado e guarda cache por imagem."""
 
-    def __init__(self, cache_size: int = 256):
+    def __init__(self, cache_size: int = 256, threads: int | None = None):
+        """threads: núcleos da CPU que o OCR pode usar (None = todos). Limitar evita que uma leitura
+        pesada (tela inteira) atrase o monitor."""
+        self._threads = threads
         self._engine = None
         self._lock = threading.Lock()
         self._cache: OrderedDict[bytes, tuple[str, float]] = OrderedDict()
@@ -73,9 +76,15 @@ class OcrEngine:
 
     def _get(self):
         if self._engine is None:
+            import os
+
             from rapidocr_onnxruntime import RapidOCR
 
-            self._engine = RapidOCR()
+            n = self._threads
+            if n and 1 <= n <= (os.cpu_count() or 1):
+                self._engine = RapidOCR(intra_op_num_threads=n, inter_op_num_threads=1)
+            else:
+                self._engine = RapidOCR()
         return self._engine
 
     def read_line(self, img_bgr: np.ndarray) -> tuple[str, float]:

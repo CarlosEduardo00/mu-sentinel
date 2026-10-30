@@ -61,7 +61,9 @@ New-Item -ItemType Directory $tmp | Out-Null
 $oldAppData = $env:APPDATA
 try {
     $env:APPDATA = $tmp  # dados zerados, como na máquina de um colega
+    $env:MUSENTINEL_SMOKE_S = "40"  # cobre a primeira checagem dos painéis (OCR da tela inteira)
     $p = Start-Process "$out\MUSentinel.exe" -ArgumentList "--smoke-test" -Wait -PassThru
+    Remove-Item Env:\MUSENTINEL_SMOKE_S
     if ($p.ExitCode -ne 0) { throw "smoke test falhou (código $($p.ExitCode)); veja $tmp\MUSentinel\logs" }
     Write-Host (Get-Content "$tmp\MUSentinel\smoke_test.txt")
 } finally {

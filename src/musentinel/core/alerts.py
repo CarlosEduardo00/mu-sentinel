@@ -1,7 +1,7 @@
 """Regras de envio dos alertas.
 
-- Crítico: repete a cada N min até o usuário reconhecer ("ok"); em provedor sem
-  retorno (CallMeBot), repete no máximo 3 vezes.
+- Uma mensagem por acontecimento. Opcional (lembrete_critico): enquanto um crítico continua,
+  manda um LEMBRETE a cada N min (sem repetir o print) até o "ok" ou até o limite.
 - Aviso: uma vez.
 - Intervalo mínimo (cooldown): mesmo alerta do mesmo slot no máximo 1× a cada 5 min.
 - Agrupamento: alertas do mesmo ciclo saem numa mensagem só.
@@ -38,19 +38,29 @@ class Alert:
     last_sent: float = 0.0
     acked: bool = False
     image: bytes | None = field(default=None, repr=False)  # print da janela (JPEG) para quem aceita imagem
+    first_ts: float = 0.0  # quando aconteceu (o ts muda nos lembretes)
 
     @property
     def key(self) -> tuple[int | None, str]:
         return (self.slot, self.kind)
 
-    def render(self, level: int, inbound: bool) -> str:
-        hhmm = time.strftime("%H:%M", time.localtime(self.ts))
-        rep = f" (repetição {self.repeats})" if self.repeats else ""
-        line1 = f"[{SEV_LABEL[self.severity]}] {self.title}" + (f" - {self.header}" if self.header else "") + rep
-        line2 = " · ".join(p for p in (hhmm, self.detail, f"nível {level}") if p)
+    def render(self, level: int, inbound: bool, reminders: bool = False) -> str:
+        sev = f"[{SEV_LABEL[self.severity]}] "
+        head = f" - {self.header}" if self.header else ""
+        if self.repeats:  # lembrete: deixa claro que é o mesmo acontecimento, não um novo
+            since = self.first_ts or self.ts
+            mins = max(0, int((self.ts - since) // 60))
+            line1 = f"{sev}LEMBRETE: {self.title} continua{head} (lembrete {self.repeats})"
+            line2 = " · ".join((f"desde {time.strftime('%H:%M', time.localtime(since))} (há {mins} min)",
+                                f"nível {level}"))
+        else:
+            line1 = f"{sev}{self.title}{head}"
+            line2 = " · ".join(p for p in (time.strftime("%H:%M", time.localtime(self.ts)), self.detail,
+                                           f"nível {level}") if p)
         lines = [line1, line2]
         if inbound and self.severity == "critico" and self.slot:
-            lines.append(f"Responda /ok para parar de repetir · /print {self.slot} para ver a tela")
+            lines.append(f"Responda /ok para parar os lembretes · /print {self.slot} para ver a tela" if reminders
+                         else f"Responda /print {self.slot} para ver a tela agora")
         return "\n".join(lines)
 
 
@@ -91,7 +101,7 @@ class AlertManager:
         """Entra na fila do ciclo. False = descartado pelo intervalo mínimo."""
         with self._lock:
             now = self.clock()
-            alert.ts = now
+            alert.ts = alert.first_ts = now
             last = self._last_by_key.get(alert.key)
             if alert.severity != "info" and last is not None and now - last < self.cfg.alerts.cooldown_min * 60:
                 log.info("alerta %s do slot %s ignorado (intervalo mínimo)", alert.kind, alert.slot)
@@ -151,6 +161,8 @@ class AlertManager:
             self._dispatch(batch, now)
 
     def _due_repeats(self, now: float) -> list[Alert]:
+        if not self.cfg.alerts.repeat_critical:
+            return []
         out = []
         inbound = any(getattr(n, "supports_inbound", False) for n in self.notifiers)
         limit = None if inbound else self.cfg.alerts.max_repeats_no_reply
@@ -175,8 +187,8 @@ class AlertManager:
                 continue
             text = self.compose(items, getattr(n, "supports_inbound", False))
             image = None
-            if getattr(n, "supports_images", False):
-                image = next((a.image for a in items if a.image), None)
+            if getattr(n, "supports_images", False):  # lembrete não repete o print
+                image = next((a.image for a in items if a.image and not a.repeats), None)
             try:
                 n.send(text, image) if image else n.send(text)
             except Exception:
@@ -187,8 +199,9 @@ class AlertManager:
 
     def compose(self, items: list[Alert], inbound: bool = False) -> str:
         level = self.level()
+        rem = self.cfg.alerts.repeat_critical
         if len(items) == 1:
-            return items[0].render(level, inbound)
+            return items[0].render(level, inbound, rem)
         worst = max(items, key=lambda a: SEV_ORDER[a.severity]).severity
         head = f"[{SEV_LABEL[worst]}] {len(items)} alertas ao mesmo tempo"
-        return head + "\n\n" + "\n\n".join(a.render(level, inbound) for a in items)
+        return head + "\n\n" + "\n\n".join(a.render(level, inbound, rem) for a in items)

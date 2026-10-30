@@ -19,11 +19,13 @@ class Clock:
         self.t += minutes * 60
 
 
-def make(cfg=None, inbound=False):
+def make(cfg=None, inbound=False, reminders=False):
     clk = Clock()
     ext, local = FakeNotifier(external=True), FakeNotifier(external=False)
     ext.supports_inbound = inbound
-    m = AlertManager(cfg or Config(), [local, ext], clock=clk)
+    cfg = cfg or Config()
+    cfg.alerts.repeat_critical = reminders or cfg.alerts.repeat_critical
+    m = AlertManager(cfg, [local, ext], clock=clk)
     return m, clk, ext, local
 
 
@@ -38,7 +40,33 @@ def test_format_matches_spec():
     lines = ext.sent[0].splitlines()
     assert lines[0] == '[CRÍTICO] MORTE - Slot 2 "Elf" (Kanturu 213,39)'
     assert lines[1] == "12:00 · HP 0/807 · nível 0"
-    assert lines[2] == "Responda /ok para parar de repetir · /print 2 para ver a tela"
+    assert lines[2] == "Responda /print 2 para ver a tela agora"
+
+
+def test_one_message_per_event_by_default():
+    m, clk, ext, _ = make(inbound=True)
+    m.submit(crit())
+    m.flush()
+    for _ in range(6):
+        clk.advance(5)
+        m.flush()
+    assert len(ext.sent) == 1  # continuou morto 30 min: nenhuma mensagem repetida
+
+
+def test_reminder_is_clearly_a_reminder_without_photo():
+    m, clk, ext, _ = make(inbound=True, reminders=True)
+    ext.supports_images = True
+    a = crit()
+    a.image = b"jpg"
+    m.submit(a)
+    m.flush()
+    clk.advance(5)
+    m.flush()
+    first, again = ext.sent[0].splitlines(), ext.sent[1].splitlines()
+    assert ext.images == [b"jpg", None]
+    assert first[2] == "Responda /ok para parar os lembretes · /print 1 para ver a tela"
+    assert again[0] == '[CRÍTICO] LEMBRETE: MORTE continua - Slot 1 "Elf" (Kanturu 213,39) (lembrete 1)'
+    assert again[1] == "desde 12:00 (há 5 min) · nível 0"
 
 
 def test_no_reply_line_without_inbound():
@@ -78,18 +106,18 @@ def test_grouping_same_cycle():
 
 
 def test_critical_repeats_max_3_without_reply():
-    m, clk, ext, _ = make()
+    m, clk, ext, _ = make(reminders=True)
     m.submit(crit())
     m.flush()
     for _ in range(10):
         clk.advance(5)
         m.flush()
-    assert len(ext.sent) == 4  # original + 3 repetições
-    assert "(repetição 3)" in ext.sent[-1]
+    assert len(ext.sent) == 4  # original + 3 lembretes
+    assert "(lembrete 3)" in ext.sent[-1]
 
 
 def test_critical_repeats_until_ok_with_inbound():
-    m, clk, ext, _ = make(inbound=True)
+    m, clk, ext, _ = make(inbound=True, reminders=True)
     m.submit(crit())
     m.flush()
     for _ in range(6):
@@ -103,7 +131,7 @@ def test_critical_repeats_until_ok_with_inbound():
 
 
 def test_repeat_respects_interval():
-    m, clk, ext, _ = make()
+    m, clk, ext, _ = make(reminders=True)
     m.submit(crit())
     m.flush()
     clk.advance(4)
@@ -122,7 +150,7 @@ def test_warning_sent_once():
 
 
 def test_resolve_stops_repetition():
-    m, clk, ext, _ = make()
+    m, clk, ext, _ = make(reminders=True)
     m.submit(crit())
     m.flush()
     m.resolve(1)

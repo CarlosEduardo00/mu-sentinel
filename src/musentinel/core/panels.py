@@ -28,6 +28,7 @@ RECHECK_CLOSED_S = 90  # painel que fechou (já avisado): procura de novo a cada
 SEEN_CHECKS = 2  # painel aberto em 2 checagens seguidas = "o usuário deixou aberto"
 MISSING_CHECKS = 3  # sumido em 3 checagens seguidas = fechou
 SHOP_CONFIRM = 2  # contador do Gremory lido igual 2 vezes antes de avisar a venda
+OCR_THREADS = 2  # medido: 2 núcleos ~3,0 s por tela; todos os 16 ~4,0 s (disputa entre threads); 1 ~5,1 s
 
 
 @dataclass
@@ -63,11 +64,14 @@ class PanelService:
         self._clock = clock
         self._lock = threading.RLock()  # um OCR por vez; leituras de slots diferentes não se misturam
         self._slots: dict[int, _SlotState] = {}
+        # painéis abertos por slot, para o monitor consultar sem esperar uma varredura (que leva segundos)
+        self._open: dict[int, list[str]] = {}
 
     @property
     def ocr(self) -> OcrEngine:
         if self._ocr is None:
-            self._ocr = OcrEngine()  # instância própria: não disputa com a leitura do HUD
+            # instância própria e só 2 núcleos: a leitura da tela inteira (~3 s) não atrasa o monitor
+            self._ocr = OcrEngine(threads=OCR_THREADS)
         return self._ocr
 
     def _st(self, slot: int) -> _SlotState:
@@ -76,12 +80,14 @@ class PanelService:
     def forget(self, slot: int) -> None:
         with self._lock:
             self._slots.pop(slot, None)
+            self._open.pop(slot, None)
 
     def open_panels(self, slot: int) -> list[str]:
-        """Painéis vistos abertos na última checagem, na ordem de P.KINDS."""
-        with self._lock:
-            st = self._slots.get(slot)
-            return [k for k in P.KINDS if st and k in st.hits]
+        """Painéis vistos abertos na última checagem, na ordem de P.KINDS. Não espera o OCR."""
+        return list(self._open.get(slot, []))
+
+    def _publish(self, slot: int, st: _SlotState) -> None:
+        self._open[slot] = [k for k in P.KINDS if k in st.hits]
 
     # ------------------------------------------------------------------ localizar
     def _refresh_hits(self, st: _SlotState, img: np.ndarray, force: bool = False,
@@ -142,6 +148,7 @@ class PanelService:
                                                           "continuar acompanhando"))
             if is_shop and "loja" in st.hits:
                 events += self._check_shop(st, img)
+            self._publish(slot, st)
             return events
 
     def _check_shop(self, st: _SlotState, img: np.ndarray) -> list[PanelEvent]:
@@ -185,6 +192,7 @@ class PanelService:
             boxes = None
             if hit is None or not P.still_open(img, hit):
                 boxes = self._refresh_hits(st, img, force=True)
+                self._publish(slot, st)
                 hit = st.hits.get(kind)
             if hit is None:
                 return None

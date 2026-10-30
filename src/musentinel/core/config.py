@@ -136,6 +136,8 @@ class QuietHours(_Model):
 
 
 class AlertsConfig(_Model):
+    # lembrete do alerta crítico enquanto o problema continua (desligado: 1 mensagem por acontecimento)
+    repeat_critical: bool = Field(False, alias="lembrete_critico")
     critical_repeat_min: float = Field(5, alias="repetir_critico_min", ge=1)
     max_repeats_no_reply: int = Field(3, alias="max_repeticoes_sem_resposta", ge=0)
     cooldown_min: float = Field(5, alias="intervalo_mesmo_alerta_min", ge=0)

@@ -41,7 +41,8 @@ def _default_get(url: str, timeout: float) -> tuple[int, str]:
 
 
 def build_url(phone: str, text: str, apikey: str) -> str:
-    return f"{API_URL}?phone=%2B{phone}&text={quote(text[:MAX_TEXT], safe='')}&apikey={quote(apikey, safe='')}"
+    # telefone só com dígitos (DDI+DDD+número), igual ao link de teste que o próprio bot manda
+    return f"{API_URL}?phone={phone}&text={quote(text[:MAX_TEXT], safe='')}&apikey={quote(apikey, safe='')}"
 
 
 class PermanentError(Exception):
@@ -139,8 +140,11 @@ class CallMeBotNotifier:
         except Exception as exc:
             return False, f"sem conexão com o CallMeBot ({type(exc).__name__})"
         kind = classify(status, body)
+        said = _summary(body).replace(key, "•••")
+        log.info("CallMeBot (teste) para %s: HTTP %s, %s: %s", mask_phone(recipient.phone), status, kind, said)
         if kind == "ok":
-            return True, "mensagem enviada — confira o WhatsApp em alguns segundos"
+            return True, (f"o CallMeBot aceitou (respondeu: \"{said}\"). Deve chegar em até 2 min; se não "
+                          "chegar, o atraso é na fila do CallMeBot")
         if kind == "fatal":
             return False, f"o CallMeBot recusou: {_summary(body) or status}. Confira o número e a chave."
         return False, f"o CallMeBot respondeu {status}: {_summary(body)}"

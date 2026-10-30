@@ -63,8 +63,7 @@ Dá para refazer depois em *Arquivo → Assistente de configuração*.
 3. Abra o link do seu bot que aparece no app e toque em **Iniciar**.
 4. Clique em **Buscar conversas**, deixe marcado quem recebe e clique em **Testar**.
 
-Nos alertas críticos vai junto o print da janela, e o alerta repete até você responder **/ok** (ou tocar em
-"✅ OK, vi o alerta"). Outra pessoa também pode receber os alertas do seu PC:
+Nos alertas críticos vai junto o print da janela. Outra pessoa também pode receber os alertas do seu PC:
 ela abre o link do seu bot, toca em Iniciar, e você busca as conversas de novo. O token fica guardado no
 Gerenciador de Credenciais do Windows, não em arquivo.
 
@@ -81,7 +80,7 @@ Só as conversas da lista do app são atendidas:
 | `/personagem 2` | Imagem da janela C: classe, level, pontos a distribuir, atributos |
 | `/cacada 2` | Instant Hunting Log: tempo de caça, EXP por segundo e por hora, abates, dano |
 | `/loja` | Gremory Case da janela **Loja** (quantos itens entraram) |
-| `/ok` | Para de repetir os alertas críticos |
+| `/ok` | Para os lembretes dos alertas críticos (se estiverem ligados) |
 | `/pausar 60` · `/retomar` | Pausa os alertas por 60 min / volta |
 
 O MU Sentinel **não aperta teclas** no jogo: os painéis precisam estar **abertos por você** (C, I, a janela de
@@ -119,8 +118,10 @@ use o Telegram e tente de novo em alguns dias. Quando houver vaga:
 
 - Fechar a janela do app **não** desliga o monitor: ele fica no ícone perto do relógio.
   Para sair: botão direito no ícone → **Sair**.
-- Alerta crítico (morte, desconexão, janela travada ou fechada) repete a cada 5 min (até 3 vezes)
-  até você clicar em **OK, vi o alerta** no painel.
+- Cada acontecimento (morte, desconexão, janela travada ou fechada) gera **uma** mensagem, e outra quando
+  resolve. Quer ser lembrado enquanto o problema continua (ex.: para acordar)? Ligue o **lembrete** em
+  *Configurações → Alertas*: chega "LEMBRETE: MORTE continua" a cada 5 min até você responder **/ok** no
+  Telegram ou clicar em **OK, vi o alerta** no painel.
 - **Pausar alertas** no topo do painel (30 min, 1 h, 2 h ou até retomar).
 - Se o mapa/HP aparecer como ILEGÍVEL: algum menu está por cima do HUD (inventário, Helper…).
   Isso nunca gera alerta crítico.
@@ -151,5 +152,6 @@ Para usar tudo dentro da própria pasta do app (pendrive), crie um arquivo vazio
 | Telegram: "outra cópia do MU Sentinel está lendo as mensagens" | O mesmo bot está em dois PCs: cada PC precisa do próprio bot |
 | Telegram: "Buscar conversas" não acha ninguém | Abra o link do bot e toque em Iniciar (vale por 24 h), depois busque de novo |
 | WhatsApp: teste falha | Confira o número com DDI, a apikey e se o número do bot ainda é o do site |
+| WhatsApp: "o CallMeBot aceitou", mas não chega | Abra no navegador o link de teste que o próprio bot mandou no WhatsApp. Se também não chegar, a fila do CallMeBot está atrasada ou parada: use o Telegram |
 | Nenhuma janela encontrada | O título da janela precisa ser "MU" e o processo `main.exe` (ajustável em *Configurações → Monitor*) |
 | Alertas não chegam com o PC em espera | Veja a seção Energia |
