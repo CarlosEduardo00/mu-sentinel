@@ -65,6 +65,37 @@ def test_reads_hunting_log(imgs, scanned):
     assert r.fields["EXP por hora (estimado)"] == "8,8 mi"
 
 
+@pytest.fixture(scope="module")
+def layout2(ocr):
+    """Layout que o usuário arrumou: C, I e Instant Hunting Log lado a lado, em dois personagens."""
+    out = {}
+    for k in ("elf_c_i_cacada", "pipe_c_i_cacada"):
+        img = cv2.imread(str(FIX / f"{k}.png"))
+        hits, boxes = P.scan(img, ocr)
+        out[k] = {kind: P.read(kind, img, hit, ocr, boxes) for kind, hit in hits.items()}
+    return out
+
+
+def test_layout2_elf_points_dash_and_big_items(layout2):
+    r = layout2["elf_c_i_cacada"]
+    assert set(r) == {"personagem", "inventario", "caca"}
+    c = r["personagem"].data
+    assert (c["level"], c["ptsremaining"], c["agility"], c["energy"]) == (204, 0, 788, 100)  # "-" = sem pontos
+    inv = r["inventario"].data
+    assert (inv["used"], inv["zen"]) == (21, 54_093_918)  # células cobertas só pelo fundo verde do item contam
+    h = r["caca"].data
+    assert (h["tempo_s"], h["gainedexp"], h["monsterkills"]) == (28 * 60 + 10, 253, pytest.approx(0.18))
+
+
+def test_layout2_ocr_noise_in_labels_and_values(layout2):
+    r = layout2["pipe_c_i_cacada"]
+    c = r["personagem"].data
+    assert (c["level"], c["ptsremaining"], c["agility"]) == (277, 6, 402)  # botão "+" lido como lixo antes do 402
+    h = r["caca"].data
+    assert h["gainedexp"] == 2153  # rótulo lido "Gained EXR per second"
+    assert r["inventario"].data["used"] == 48
+
+
 def test_reads_gremory_counter_and_tab(imgs, scanned, ocr):
     img = imgs["loja_gremory"]
     hits, boxes = scanned["loja_gremory"]

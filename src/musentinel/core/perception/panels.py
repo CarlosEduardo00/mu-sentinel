@@ -222,12 +222,26 @@ def _boxes_in(boxes: list[TextBox], hit: PanelHit) -> list[TextBox]:
     return [b for b in boxes if x0 <= b.cx <= x1 and y0 <= b.cy <= y1]
 
 
-def _row_value(label: TextBox, boxes: list[TextBox], rightmost: bool = False) -> TextBox | None:
+def _row_value(label: TextBox, boxes: list[TextBox], rightmost: bool = False,
+               need_digit: bool = False) -> TextBox | None:
+    """Valor na mesma linha, à direita do rótulo. need_digit: pula lixo como o botão '+' lido como '中'."""
     tol = max(6.0, 0.6 * label.h)
     row = [b for b in boxes if b is not label and abs(b.cy - label.cy) <= tol and b.x0 >= label.x1 - 2]
+    if need_digit:
+        row = [b for b in row if any(c.isdigit() for c in b.text)]
     if not row:
         return None
     return max(row, key=lambda b: b.x1) if rightmost else min(row, key=lambda b: b.x0)
+
+
+def _label_is(key: str, want: str, prefix: bool = False) -> bool:
+    """Rótulo lido pelo OCR casa com o esperado, tolerando 1–2 letras trocadas ('Gained EXR per second')."""
+    if key == want or (prefix and key.startswith(want)):
+        return True
+    if len(want) < 6:
+        return False
+    cand = key[:len(want)] if prefix else key
+    return difflib.SequenceMatcher(None, cand, want).ratio() >= 0.85
 
 
 def inventory_cells(img: np.ndarray, hit: PanelHit) -> list[list[bool]] | None:
@@ -246,7 +260,12 @@ def inventory_cells(img: np.ndarray, hit: PanelHit) -> list[list[bool]] | None:
         for k in range(cols):
             a = img[int(y0 + r * c) + inset:int(y0 + (r + 1) * c) - inset + 1,
                     int(x0 + k * c) + inset:int(x0 + (k + 1) * c) - inset + 1].astype(np.float32)
-            empty = a.size and float(a.std()) < 12 and float(a.mean()) < 45
+            if not a.size:
+                row.append(False)
+                continue
+            b, g, _ = a.reshape(-1, 3).mean(0)
+            # vazia = cinza neutro e liso; item grande cobre células só com o fundo esverdeado (sem ícone)
+            empty = float(a.std()) < 7 and g - b < 8 and float(a.mean()) < 45
             row.append(not empty)
         grid.append(row)
     return grid
@@ -292,11 +311,14 @@ def read_character(img: np.ndarray, hit: PanelHit, boxes: list[TextBox]) -> Pane
     for key, label in CHAR_FIELDS:
         if label in r.fields:
             continue
-        lab = next((b for b in inside if b.key == key), None)
+        lab = next((b for b in inside if _label_is(b.key, key)), None)
         if lab is None:
             continue
-        val = _row_value(lab, inside)
+        val = _row_value(lab, inside, need_digit=key not in _TEXT_FIELDS)
         if val is None:
+            if key == "ptsremaining":  # o jogo mostra "-" quando não há pontos
+                r.fields[label] = "0"
+                r.data[key] = 0
             continue
         if key in _TEXT_FIELDS:
             r.fields[label] = val.text
@@ -311,11 +333,14 @@ def read_character(img: np.ndarray, hit: PanelHit, boxes: list[TextBox]) -> Pane
     return r
 
 
-HUNT_FIELDS = (  # começo do rótulo (normalizado) → rótulo em pt-BR
-    ("huntingtime", "Tempo de caça"), ("gainedexp", "EXP por segundo"), ("monsterkills", "Abates por segundo"),
-    ("normaldmg", "Dano por segundo"), ("elementaldmg", "Dano elemental por segundo"),
-    ("healamount", "Cura por segundo"),
+HUNT_FIELDS = (  # rótulo do jogo (normalizado) → rótulo em pt-BR
+    ("huntingtime", "Tempo de caça"), ("gainedexppersecond", "EXP por segundo"),
+    ("monsterkillspersecond", "Abates por segundo"), ("normaldmgpersecond", "Dano por segundo"),
+    ("elementaldmgpersecond", "Dano elemental por segundo"), ("healamountpersecond", "Cura por segundo"),
 )
+_HUNT_DATA = {"huntingtime": "tempo_s", "gainedexppersecond": "gainedexp", "monsterkillspersecond": "monsterkills",
+              "normaldmgpersecond": "normaldmg", "elementaldmgpersecond": "elementaldmg",
+              "healamountpersecond": "healamount"}
 
 
 def parse_hms(text: str) -> int | None:
@@ -330,10 +355,10 @@ def read_hunting(img: np.ndarray, hit: PanelHit, boxes: list[TextBox]) -> PanelR
     r = PanelReading("caca", hit, crop(img, hit))
     inside = [b for b in _boxes_in(boxes, hit) if b is not hit.anchor and b.key != hit.anchor.key]
     for key, label in HUNT_FIELDS:
-        lab = next((b for b in inside if b.key.startswith(key)), None)
+        lab = next((b for b in inside if _label_is(b.key, key, prefix=True)), None)
         if lab is None:
             continue
-        val = _row_value(lab, inside, rightmost=True)
+        val = _row_value(lab, inside, rightmost=True, need_digit=True)
         if val is None:
             continue
         if key == "huntingtime":
@@ -345,7 +370,7 @@ def read_hunting(img: np.ndarray, hit: PanelHit, boxes: list[TextBox]) -> PanelR
         num = parse_number(val.text)
         if num is None:
             continue
-        r.data[key] = num
+        r.data[_HUNT_DATA[key]] = num
         r.fields[label] = fmt_dec(num)
     if "gainedexp" in r.data:
         r.fields["EXP por hora (estimado)"] = fmt_big(r.data["gainedexp"] * 3600)
