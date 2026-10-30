@@ -51,7 +51,9 @@ class Discovery:
     ) -> None:
         self.title = title
         self.process = process
-        self._lister = lister or (lambda: winapi.list_windows(self.title, self.process))
+        self.hidden = 0  # janelas do jogo cujo processo o Windows não informou (anti-cheat)
+        self._lister = lister or (lambda: winapi.list_windows(self.title, self.process, self._stats))
+        self._stats: dict = {}
         self._rect_of = rect_of
         self.store = store
         self.active: dict[int, SlotBinding] = {}  # slot → janela atual
@@ -68,6 +70,8 @@ class Discovery:
         except Exception:
             log.exception("falha ao listar janelas")
             return dict(self.active)
+        self.hidden = int(self._stats.get("sem_dono", 0))
+        log.debug("descoberta: %d janela(s) visíveis, %d sem dono informado", len(wins), self.hidden)
         by_hwnd = {w.hwnd: w for w in wins}
 
         for slot, b in list(self.active.items()):

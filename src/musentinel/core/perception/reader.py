@@ -68,7 +68,7 @@ class HudReader:
             try:
                 out[f] = self.read_field(image, f)
             except Exception as exc:  # leitura nunca derruba o monitor
-                out[f] = unreadable(f"erro: {exc}")
+                out[f] = unreadable(f"erro: {type(exc).__name__}: {exc}")
         return HudReading(out, True, elapsed_ms=(time.perf_counter() - t0) * 1000)
 
     # ------------------------------------------------------------------

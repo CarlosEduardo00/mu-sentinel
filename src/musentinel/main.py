@@ -75,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
         QMessageBox.information(None, "MU Sentinel", "O MU Sentinel já está aberto (veja o ícone na bandeja).")
         return 0
 
-    logfile = setup_logging(to_console=sys.stderr is not None)
+    import os
+
+    logfile = setup_logging(logging.DEBUG if os.environ.get("MUSENTINEL_DEBUG") else logging.INFO,
+                            to_console=sys.stderr is not None)
     from . import __version__
 
     log.info("MU Sentinel %s iniciando (admin=%s)", __version__, winapi.current_process_elevated())
@@ -135,7 +138,9 @@ def smoke_test(cfg, bus, store) -> int:
         win.tray.hide()
         QApplication.quit()
 
-    QTimer.singleShot(12000, check)
+    import os
+
+    QTimer.singleShot(int(float(os.environ.get("MUSENTINEL_SMOKE_S", "12")) * 1000), check)
     QApplication.instance().exec()
     store.close()
     log.info("smoke test: código %s", result["rc"])

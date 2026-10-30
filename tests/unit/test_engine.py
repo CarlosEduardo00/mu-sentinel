@@ -26,8 +26,11 @@ class Game:
         self.map = {i: "Kanturu" for i in range(1, n + 1)}
         self.exp = {i: 100_000 for i in range(1, n + 1)}
         self.frame_n = 0
+        self.hidden_by_anticheat = False
 
     def windows(self):
+        if self.hidden_by_anticheat:
+            return []
         return [WindowInfo(i, 1000 + i, "MU", "main.exe", (800, 600), False, False)
                 for i, a in self.alive.items() if a]
 
@@ -49,6 +52,7 @@ class FakeCapture:
 class FakeReading:
     def __init__(self, vals):
         self.vals = vals
+        self.fields = {}
 
     def value(self, name, min_conf=0.0):
         return self.vals.get(name)
@@ -174,3 +178,15 @@ def test_snapshots_published(rig):
     snaps = got[-1]
     assert [s.slot for s in snaps] == [1, 2]
     assert snaps[0].hp == (800, 811) and snaps[0].map == "Kanturu" and snaps[0].thumb is not None
+
+
+def test_anticheat_hiding_windows_is_warning_not_closed(rig):
+    game, e, ext, run, clock = rig(2)
+    run(5)
+    game.hidden_by_anticheat = True
+    e.discovery._stats["sem_dono"] = 2  # o Windows não informa o dono das janelas
+    run(6)
+    assert not any("CLIENT FECHADO" in m for m in ext.sent)
+    blocked = [m for m in ext.sent if "BLOQUEADO PELO ANTI-CHEAT" in m]
+    assert len(blocked) == 1 and blocked[0].startswith("[AVISO]")
+    assert all(e.slots[i].tracker.view.state == State.ILEGIVEL for i in (1, 2))

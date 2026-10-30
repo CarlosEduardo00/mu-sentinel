@@ -7,12 +7,29 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes as wt
+import logging
 from dataclasses import dataclass
 
+log = logging.getLogger(__name__)
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
 dwmapi = ctypes.WinDLL("dwmapi")
+kernel32.CloseHandle.argtypes = [wt.HANDLE]
+
+for _name, _args, _res in (
+    ("IsWindowVisible", [wt.HWND], wt.BOOL),
+    ("GetWindowTextLengthW", [wt.HWND], ctypes.c_int),
+    ("GetWindowTextW", [wt.HWND, wt.LPWSTR, ctypes.c_int], ctypes.c_int),
+    ("GetWindowThreadProcessId", [wt.HWND, ctypes.POINTER(wt.DWORD)], wt.DWORD),
+    ("IsWindow", [wt.HWND], wt.BOOL),
+    ("IsIconic", [wt.HWND], wt.BOOL),
+    ("GetClientRect", [wt.HWND, ctypes.POINTER(wt.RECT)], wt.BOOL),
+    ("ClientToScreen", [wt.HWND, ctypes.POINTER(wt.POINT)], wt.BOOL),
+    ("GetWindowRect", [wt.HWND, ctypes.POINTER(wt.RECT)], wt.BOOL),
+):
+    _f = getattr(user32, _name)
+    _f.argtypes, _f.restype = _args, _res
 
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 TOKEN_QUERY = 0x0008
@@ -73,6 +90,7 @@ def get_window_text(hwnd: int) -> str:
 
 
 def get_pid(hwnd: int) -> int:
+    """PID dono da janela. 0 = o Windows não informou (ver list_windows)."""
     pid = wt.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     return pid.value
@@ -111,7 +129,8 @@ def process_name(pid: int) -> str:
 
     try:
         return psutil.Process(pid).name()
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    except Exception as exc:  # processo elevado/protegido: sem nome não é motivo para descartar
+        log.debug("nome do processo %s indisponível: %s", pid, type(exc).__name__)
         return ""
 
 
@@ -187,21 +206,44 @@ def monitor_off() -> None:
 _EnumProc = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
 
 
-def list_windows(title: str = "MU", process: str | None = "main.exe") -> list[WindowInfo]:
-    """Janelas visíveis de nível superior com o título exato (e o processo, se informado)."""
+def list_windows(title: str = "MU", process: str | None = "main.exe",
+                 stats: dict | None = None) -> list[WindowInfo]:
+    """Janelas visíveis de nível superior com o título exato (e o processo, se informado).
+
+    `stats["sem_dono"]` recebe quantas janelas com o título certo o Windows não disse de
+    qual processo são. Isso acontece quando o anti-cheat do jogo (GameGuard) restringe este
+    programa. O app não tenta contornar: só conta, para avisar o usuário.
+    """
     found: list[int] = []
+    enum_stats = {"total": 0, "erros": 0}
+    own_pid = kernel32.GetCurrentProcessId()
 
     def cb(hwnd, _):
-        if user32.IsWindowVisible(hwnd) and get_window_text(hwnd) == title:
-            found.append(hwnd)
+        # exceção dentro do callback faria o EnumWindows parar no meio sem avisar
+        try:
+            enum_stats["total"] += 1
+            # janelas do próprio app: GetWindowText nelas manda mensagem para a thread da
+            # GUI e pode travar; não precisam ser olhadas
+            if hwnd and user32.IsWindowVisible(hwnd) and get_pid(hwnd) != own_pid \
+                    and get_window_text(hwnd) == title:
+                found.append(hwnd)
+        except Exception:
+            enum_stats["erros"] += 1
         return True
 
-    user32.EnumWindows(_EnumProc(cb), 0)
+    ok = user32.EnumWindows(_EnumProc(cb), 0)
+    log.debug("EnumWindows ok=%s janelas=%d erros=%d com título %r=%d", ok, enum_stats["total"], enum_stats["erros"],
+              title, len(found))
     out: list[WindowInfo] = []
+    hidden = 0
     for hwnd in found:
         pid = get_pid(hwnd)
+        if not pid:
+            hidden += 1
+            continue
         pname = process_name(pid)
         if process and pname and pname.lower() != process.lower():
+            log.debug("janela %s ignorada: processo %r (PID %s) não é %r", hwnd, pname, pid, process)
             continue
         r = wt.RECT()
         user32.GetClientRect(hwnd, ctypes.byref(r))
@@ -216,4 +258,6 @@ def list_windows(title: str = "MU", process: str | None = "main.exe") -> list[Wi
                 elevated=is_process_elevated(pid),
             )
         )
+    if stats is not None:
+        stats["sem_dono"] = hidden
     return out

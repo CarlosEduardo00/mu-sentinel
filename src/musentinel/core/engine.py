@@ -28,6 +28,9 @@ from .state_machine import CRITICAL, Observation, SlotTracker, State
 
 log = logging.getLogger(__name__)
 THUMB_W = 320
+PROTECTION_TITLE = "MONITORAMENTO BLOQUEADO PELO ANTI-CHEAT"
+PROTECTION_NOTE = ("o anti-cheat do jogo (GameGuard) não deixa o MU Sentinel ver de qual processo são as "
+                   "janelas do MU; o app não contorna essa proteção, então estas janelas não estão sendo monitoradas")
 
 
 @dataclass
@@ -93,6 +96,8 @@ class Engine:
         self.power_warnings: list[str] = []
         self.elevated_game = False
         self._awake: tuple[bool, bool] | None = None
+        self._read_errors: set[tuple[str, str]] = set()
+        self.protection_blocked = 0  # janelas do jogo escondidas pelo anti-cheat
 
     # ------------------------------------------------------------------ ciclo de vida
     def start(self) -> None:
@@ -151,6 +156,7 @@ class Engine:
             bindings = self.discovery.refresh()
             for msg in self.discovery.events:
                 self.bus.emit("info", msg, severity="aviso")
+            self._check_protection(self.discovery.hidden)
             conns = health.tcp_by_pid()
             locked = health.session_locked()
             user_active = health.user_idle_s() < cfg.thresholds.city_grace_s
@@ -196,6 +202,9 @@ class Engine:
 
     def _observe(self, s: _Slot, b, now, conns, locked, user_active, internet_down) -> Observation:
         if b is None:
+            if self.protection_blocked:
+                # a janela não sumiu: o anti-cheat só não deixa este programa ver de quem ela é
+                return Observation(ts=now, capture_ok=False, connected=s.connected, note=PROTECTION_NOTE)
             if s.pid and health.process_alive(s.pid, self.cfg.monitor.process_name or None):
                 return Observation(ts=now, capture_ok=False, connected=s.connected,
                                    note="janela do jogo sumiu, mas o processo continua aberto")
@@ -236,6 +245,13 @@ class Engine:
                 o.note = f"sem perfil para {w}x{h}: abra a Calibração"
             else:
                 r = reader.read(img)
+                for fname, fr in r.fields.items():
+                    if fr.raw.startswith("erro:") and (fname, fr.raw) not in self._read_errors:
+                        self._read_errors.add((fname, fr.raw))  # registra cada erro diferente uma vez
+                        log.error("falha ao ler %s (slot %s): %s", fname, s.n, fr.raw)
+                if log.isEnabledFor(logging.DEBUG):
+                    log.debug("slot %s leitura: %s", s.n, {k: (v.status, v.raw[:24], round(v.confidence, 2))
+                                                           for k, v in r.fields.items()})
                 o.hp = r.value("hp")
                 o.exp = r.value("exp")
                 o.coords = r.value("coords")
@@ -243,6 +259,10 @@ class Engine:
                 o.hunting_time = r.value("hunting_time")
                 if o.hp is None and o.exp is None:
                     o.note = "HUD ilegível (menu, loading ou janela por cima)"
+        if o.note != getattr(s, "_last_note", ""):
+            s._last_note = o.note
+            if o.note:
+                log.info("slot %s: %s", s.n, o.note)
         online_evidence = o.hp is not None and o.hp[0] > 0
         connected = s.conn.update(conns.get(b.pid, set()), online_evidence)
         if internet_down and s.conn.reference:
@@ -263,13 +283,27 @@ class Engine:
 
             if self._ocr is None:
                 self._ocr = OcrEngine()
-            reader = HudReader(paths.load_or_default_profile(w, h), ocr=self._ocr)
+            prof = paths.load_or_default_profile(w, h)
+            log.info("perfil %dx%d carregado (%s); dígitos que faltam: %s", w, h,
+                     "do usuário" if paths.profile_path(w, h).exists() else
+                     "semente" if paths.seed_profile_path(w, h).exists() else "de fábrica",
+                     {f: "".join(sorted(prof.missing_chars(f))) for f in ("hp", "coords", "exp", "hunting_time")})
+            reader = HudReader(prof, ocr=self._ocr)
         self._readers[size] = reader
         return reader
 
     def reload_profiles(self) -> None:
         with self._lock:
             self._readers.clear()
+
+    def _check_protection(self, hidden: int) -> None:
+        if hidden and not self.protection_blocked:
+            self.bus.emit("alerta", f"{PROTECTION_TITLE}: {hidden} janela(s) do jogo escondida(s)", severity="aviso")
+            self.alerts.submit(Alert(None, "BLOQUEIO_ANTICHEAT", "aviso", PROTECTION_TITLE,
+                                     detail=f"{hidden} janela(s) · {PROTECTION_NOTE}"))
+        elif not hidden and self.protection_blocked:
+            self.bus.emit("info", "o anti-cheat voltou a deixar o MU Sentinel ver as janelas do jogo")
+        self.protection_blocked = hidden
 
     # ------------------------------------------------------------------ sinais → alertas
     def _header(self, s: _Slot) -> str:
