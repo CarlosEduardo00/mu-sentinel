@@ -15,6 +15,8 @@ from .profile import CHARSETS, FIELD_KINDS, Profile
 
 DEFAULT_FIELDS = ("hp", "coords", "exp", "hunting_time", "map")
 UNKNOWN_CHAR_CONF = 0.3  # confiança que o template devolve quando sobra tinta sem caractere
+VERDICT_OK_S = 120  # o OCR confirmou este texto: aceita o mesmo texto sem OCR por 2 min
+VERDICT_FAIL_S = 30  # o OCR não confirmou: não tenta de novo o mesmo texto por 30 s
 
 
 def _is_subsequence(part: str, whole: str) -> bool:
@@ -50,6 +52,9 @@ class HudReader:
         ocr_fallback: bool = True,
     ):
         self.ocr_fallback = ocr_fallback
+        # decisões recentes do OCR de reserva por (campo, texto que o modelo leu): o HUD costuma mostrar
+        # o mesmo número por muito tempo; sem isso o OCR repetia a mesma leitura a cada ciclo (CPU à toa)
+        self._verdicts: dict[tuple[str, str], tuple[float, FieldReading | None]] = {}
         self.profile = profile
         self.ocr = ocr or OcrEngine()
         self.maps = maps or list(DEFAULT_MAPS)
@@ -150,8 +155,33 @@ class HudReader:
             return unreadable("", 0.0)
         return self._glyph_result(name, crop, text, conf)
 
+    def _remembered(self, key: tuple[str, str]) -> tuple[bool, FieldReading | None]:
+        hit = self._verdicts.get(key)
+        if hit is None:
+            return False, None
+        ts, val = hit
+        ttl = VERDICT_OK_S if val is not None else VERDICT_FAIL_S
+        if time.monotonic() - ts > ttl:
+            self._verdicts.pop(key, None)
+            return False, None
+        return True, val
+
+    def _remember(self, key: tuple[str, str], val: FieldReading | None) -> None:
+        if len(self._verdicts) > 512:
+            self._verdicts.clear()
+        self._verdicts[key] = (time.monotonic(), val)
+
     def _ocr_confirm(self, name: str, crop: np.ndarray, r: FieldReading) -> FieldReading:
         """Template e OCR (duas escalas) precisam dar o mesmo valor; senão, ilegível."""
+        key = (name, "confirm:" + r.raw)
+        known, val = self._remembered(key)
+        if known:
+            return r if val is not None else unreadable(r.raw, 0.4)
+        out = self._ocr_confirm_now(name, crop, r)
+        self._remember(key, out if out.ok else None)
+        return out
+
+    def _ocr_confirm_now(self, name: str, crop: np.ndarray, r: FieldReading) -> FieldReading:
         cs = CHARSETS[name]
         text, score = self.ocr.read_number(crop, cs)
         if text and score >= self.min_confidence:
@@ -176,6 +206,15 @@ class HudReader:
         Lê com OCR em duas escalas e só aceita se: as duas concordam, o valor é
         válido e contém, na ordem, tudo o que o template já tinha lido.
         """
+        key = (name, "rescue:" + partial)
+        known, val = self._remembered(key)
+        if known:
+            return val
+        out = self._ocr_rescue_now(name, crop, partial)
+        self._remember(key, out)
+        return out
+
+    def _ocr_rescue_now(self, name: str, crop: np.ndarray, partial: str) -> FieldReading | None:
         text, score = self.ocr.read_number(crop, CHARSETS[name])
         if not text or score < 0.9 or not _is_subsequence(partial, text):
             return None
