@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .base import Notifier, NotifierStatus
 from .callmebot import CallMeBotNotifier
+from .telegram import TelegramNotifier
 
 
 class FakeNotifier:
@@ -16,9 +17,11 @@ class FakeNotifier:
     def __init__(self, external: bool = True) -> None:
         self.external = external
         self.sent: list[str] = []
+        self.images: list[bytes | None] = []
 
     def send(self, text: str, image: bytes | None = None) -> None:
         self.sent.append(text)
+        self.images.append(image)
 
     def start_inbound(self, on_message) -> None:
         return None
@@ -30,4 +33,4 @@ class FakeNotifier:
         pass
 
 
-__all__ = ["CallMeBotNotifier", "FakeNotifier", "Notifier", "NotifierStatus"]
+__all__ = ["CallMeBotNotifier", "FakeNotifier", "Notifier", "NotifierStatus", "TelegramNotifier"]

@@ -499,10 +499,10 @@ class MainWindow(QMainWindow):
 
     def _update_banner(self) -> None:
         msgs = []
-        cm = self.cfg.notifiers.callmebot
-        if not cm.enabled or not cm.recipients:
-            msgs.append("O WhatsApp ainda não está configurado: os alertas só aparecem neste PC. "
-                        "<a href='whatsapp'>Cadastrar meu WhatsApp</a>")
+        cm, tg = self.cfg.notifiers.callmebot, self.cfg.notifiers.telegram
+        if not (cm.enabled and cm.recipients) and not (tg.enabled and tg.chats):
+            msgs.append("Nenhum canal no celular configurado: os alertas só aparecem neste PC. "
+                        "<a href='telegram'>Configurar o Telegram</a> · <a href='whatsapp'>Configurar o WhatsApp</a>")
         if self.engine.protection_blocked:
             msgs.append(f"<b>Monitoramento limitado em {self.engine.protection_blocked} janela(s):</b> o anti-cheat do "
                         "jogo (GameGuard) não deixa este programa ver de qual processo elas são. O MU Sentinel não "
@@ -521,8 +521,8 @@ class MainWindow(QMainWindow):
             self.banner.setVisible(bool(html))
 
     def _banner_link(self, link: str) -> None:
-        if link == "whatsapp":
-            self.open_settings(tab="whatsapp")
+        if link in ("whatsapp", "telegram"):
+            self.open_settings(tab=link)
         elif link == "energia":
             os.startfile("ms-settings:powersleep")
 

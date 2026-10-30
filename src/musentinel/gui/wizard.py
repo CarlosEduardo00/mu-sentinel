@@ -183,10 +183,21 @@ class WhatsAppPage(QWizardPage):
     def __init__(self, wiz: SetupWizard):
         super().__init__()
         self.wiz = wiz
-        self.setTitle("3. WhatsApp")
-        self.setSubTitle("Cadastre o número que vai receber os alertas. Cada pessoa usa o próprio número e a "
-                         "própria chave do CallMeBot.")
-        v = QVBoxLayout(self)
+        self.setTitle("3. Alertas no celular")
+        self.setSubTitle("Escolha por onde os alertas chegam no celular: Telegram (recomendado) ou WhatsApp "
+                         "pelo CallMeBot. Dá para usar os dois.")
+        from PySide6.QtWidgets import QTabWidget
+
+        from .telegram_panel import TelegramPanel
+
+        outer = QVBoxLayout(self)
+        tabs = QTabWidget()
+        outer.addWidget(tabs)
+        self.tg_panel = TelegramPanel(wiz.cfg)
+        tabs.addTab(self.tg_panel, "Telegram")
+        wa = QWidget()
+        tabs.addTab(wa, "WhatsApp (CallMeBot)")
+        v = QVBoxLayout(wa)
         help_lbl = QLabel(CALLMEBOT_HELP)
         help_lbl.setWordWrap(True)
         help_lbl.setOpenExternalLinks(True)
@@ -204,11 +215,15 @@ class WhatsAppPage(QWizardPage):
         self.msg = QLabel("")
         self.msg.setWordWrap(True)
         v.addWidget(self.msg)
-        v.addWidget(QLabel("Dá para pular agora e cadastrar depois em Configurações → WhatsApp. "
-                           "A notificação do Windows funciona sempre."))
+        outer.addWidget(QLabel("Dá para pular agora e cadastrar depois em Configurações. "
+                               "A notificação do Windows funciona sempre."))
 
     def initializePage(self):  # noqa: N802
         self.fill()
+
+    def validatePage(self) -> bool:  # noqa: N802
+        self.tg_panel.apply_to(self.wiz.cfg)
+        return True
 
     def fill(self) -> None:
         self.list.clear()

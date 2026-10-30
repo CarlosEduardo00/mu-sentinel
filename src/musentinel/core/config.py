@@ -68,12 +68,34 @@ class CallMeBotConfig(_Model):
     min_interval_s: float = Field(5.0, alias="intervalo_min_s", ge=1)
 
 
+class TelegramChat(_Model):
+    """Uma conversa do Telegram que recebe os alertas (quem tocou em Iniciar no bot)."""
+
+    name: str = Field("", alias="nome")
+    chat_id: int = Field(..., alias="id")
+    enabled: bool = Field(True, alias="ativo")
+
+
+TELEGRAM_TOKEN_KEY = "telegram:token"
+
+
+class TelegramConfig(_Model):
+    """Bot do Telegram. O token fica no Gerenciador de Credenciais (chave TELEGRAM_TOKEN_KEY)."""
+
+    enabled: bool = Field(False, alias="ativo")
+    bot_username: str = Field("", alias="bot")
+    chats: list[TelegramChat] = Field(default_factory=list, alias="conversas")
+    min_interval_s: float = Field(1.0, alias="intervalo_min_s", ge=0.5)
+    send_images: bool = Field(True, alias="enviar_print")
+
+
 class WindowsNotifyConfig(_Model):
     enabled: bool = Field(True, alias="ativo")
 
 
 class NotifiersConfig(_Model):
     callmebot: CallMeBotConfig = Field(default_factory=CallMeBotConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     windows: WindowsNotifyConfig = Field(default_factory=WindowsNotifyConfig)
 
 

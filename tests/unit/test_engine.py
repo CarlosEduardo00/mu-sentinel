@@ -211,3 +211,13 @@ def test_anticheat_hiding_owner_with_internet_down(rig):
     e.internet.ok = False
     run(3)
     assert any("SLOTS CAÍRAM" in m for m in ext.sent)
+
+
+def test_critical_alert_carries_window_print(rig):
+    game, e, ext, run, clock = rig(1)
+    ext.supports_images = True
+    run(5)
+    game.hp[1] = (0, 811)
+    run(6)
+    i = next(k for k, m in enumerate(ext.sent) if "MORTE" in m)
+    assert ext.images[i] is not None and ext.images[i][:2] == b"\xff\xd8"  # JPEG

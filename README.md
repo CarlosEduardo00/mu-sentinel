@@ -21,16 +21,17 @@ não serão feitas, para não correr risco de banimento.
 Fechar a janela só esconde o painel: o monitor continua na bandeja (botão direito no ícone → Sair).
 Só abre uma instância por vez.
 
-Na primeira vez abre o **assistente** (janelas, perfil, WhatsApp, nível, iniciar com o Windows);
+Na primeira vez abre o **assistente** (janelas, perfil, alertas no celular, nível, iniciar com o Windows);
 para refazer: *Arquivo → Assistente de configuração* ou `--assistente`.
 
-## Gerar o executável (bloqueado pelo GameGuard)
+## Gerar o executável para os amigos
 
-> **Atenção:** o nProtect GameGuard que roda com o MU restringe o `MUSentinel.exe` empacotado: poucos
-> segundos depois de abrir, o Windows deixa de informar de qual processo são as janelas do jogo e o
-> monitoramento para. O app detecta e avisa ("MONITORAMENTO BLOQUEADO PELO ANTI-CHEAT") e **não tenta
-> contornar a proteção**. Rodando pelo código-fonte (`python.exe`) isso não aconteceu nos testes.
-> Por isso o zip não está sendo distribuído.
+> **GameGuard:** o nProtect GameGuard que roda com o MU restringe o `MUSentinel.exe` empacotado: poucos
+> segundos depois de abrir, o Windows deixa de informar de qual processo são as janelas do jogo. O app
+> **não tenta contornar** isso: avisa "MONITORAMENTO LIMITADO PELO ANTI-CHEAT" e segue só pela janela
+> (imagem, HUD, janela travada/fechada, queda da internet do PC), sem checar a conexão TCP com o
+> servidor do jogo. Rodando pelo código-fonte (`python.exe`) a restrição não apareceu nos testes.
+> O zip é distribuído sem assinatura e o uso é por conta e risco de cada um (ver `LEIA-ME.md`).
 
 ```powershell
 .\build.ps1
@@ -42,9 +43,19 @@ smoke test do `.exe` com dados zerados e compacta em `MUSentinel-vX.Y.Z-win64.zi
 Assinatura de código opcional: variável `MUSENTINEL_SIGN_CMD` (ver o topo do `build.ps1`).
 Antes de distribuir, teste o zip numa máquina/VM sem Python.
 
-## WhatsApp: cada um recebe no seu número
+## Alertas no celular
 
-Os alertas saem pelo **CallMeBot** (grátis, sem servidor). A chave do CallMeBot é ligada ao
+### Telegram (recomendado)
+
+Bot API oficial do Telegram, grátis e sem fila de espera. Em *Configurações → Telegram*: criar um bot no
+@BotFather (`/newbot`), colar o token e **Verificar**, tocar em **Iniciar** no link do bot, **Buscar
+conversas** e **Testar**. Nos alertas críticos vai junto o print da janela. O token fica no Gerenciador
+de Credenciais. Comandos pelo Telegram não fazem parte desta versão (só ida).
+
+### WhatsApp (CallMeBot)
+
+Os alertas saem pelo **CallMeBot** (grátis, sem servidor). Às vezes o CallMeBot fica sem vagas
+("The bot is currently full") e não entrega a chave; nesse caso use o Telegram até abrir vaga. A chave do CallMeBot é ligada ao
 número que fez a ativação, então **cada pessoa ativa o próprio número** e cadastra em
 *Arquivo → Configurações → WhatsApp* (ou no link amarelo do painel):
 

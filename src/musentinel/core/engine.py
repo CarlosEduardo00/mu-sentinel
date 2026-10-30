@@ -24,6 +24,7 @@ from .config import Config
 from .discovery import Discovery, default_store
 from .events import EventBus
 from .notifiers import CallMeBotNotifier
+from .notifiers.telegram import TelegramNotifier
 from .state_machine import CRITICAL, Observation, SlotTracker, State
 
 log = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ class Engine:
         self.bus = bus
         self.local_notifiers = list(local_notifiers or [])
         self.callmebot: CallMeBotNotifier | None = None
+        self.telegram: TelegramNotifier | None = None
         self.alerts = AlertManager(config, [], level=lambda: self.cfg.level, on_sent=self._on_sent)
         self._build_notifiers()
         self.discovery = Discovery(config.monitor.window_title, config.monitor.process_name, store=default_store())
@@ -335,7 +337,9 @@ class Engine:
             if not s.critical_sent:
                 return
             s.critical_sent = False
-        ok = self.alerts.submit(Alert(s.n, sig.kind, sig.severity, sig.title, self._header(s), sig.detail))
+        image = self._jpeg(s) if sig.severity == "critico" else None
+        ok = self.alerts.submit(Alert(s.n, sig.kind, sig.severity, sig.title, self._header(s), sig.detail,
+                                      image=image))
         if ok and sig.severity == "critico":
             s.critical_sent = True
 
@@ -357,23 +361,34 @@ class Engine:
         s, sig = items[0]
         self._handle_signal(s, sig)
 
+    @staticmethod
+    def _jpeg(s: _Slot) -> bytes | None:
+        if s.frame is None:
+            return None
+        ok, buf = cv2.imencode(".jpg", s.frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return buf.tobytes() if ok else None
+
     def _on_sent(self, how: str, a: Alert) -> None:
         if how == "silencioso":
             log.info("horário silencioso: %s não saiu nos canais externos", a.title)
 
     # ------------------------------------------------------------------ notificadores
     def _all_notifiers(self) -> list:
-        return self.local_notifiers + ([self.callmebot] if self.callmebot else [])
+        return self.local_notifiers + [n for n in (self.callmebot, self.telegram) if n]
 
     def _build_notifiers(self) -> None:
-        if self.callmebot:
-            self.callmebot.close()
-            self.callmebot = None
+        for n in (self.callmebot, self.telegram):
+            if n:
+                n.close()
+        self.callmebot = self.telegram = None
         cm = self.cfg.notifiers.callmebot
         if cm.enabled and any(r.enabled for r in cm.recipients):
             self.callmebot = CallMeBotNotifier(cm.recipients, cm.min_interval_s)
+        tg = self.cfg.notifiers.telegram
+        if tg.enabled and any(c.enabled for c in tg.chats):
+            self.telegram = TelegramNotifier(tg.chats, tg.min_interval_s, tg.send_images)
         local = self.local_notifiers if self.cfg.notifiers.windows.enabled else []
-        self.alerts.set_notifiers(local + ([self.callmebot] if self.callmebot else []))
+        self.alerts.set_notifiers(local + [n for n in (self.callmebot, self.telegram) if n])
 
     def notifier_status(self) -> list[tuple[str, bool, str]]:
         out = []
@@ -381,14 +396,20 @@ class Engine:
             for n in self.local_notifiers:
                 st = n.status()
                 out.append((n.name, st.ok, st.detail))
+        tg = self.cfg.notifiers.telegram
+        if self.telegram:
+            st = self.telegram.status()
+            out.append((self.telegram.name, st.ok, st.detail))
+        elif tg.enabled:
+            out.append(("Telegram", False, "nenhuma conversa marcada"))
         cm = self.cfg.notifiers.callmebot
         if self.callmebot:
             st = self.callmebot.status()
             out.append((self.callmebot.name, st.ok, st.detail))
         elif cm.enabled:
             out.append(("WhatsApp (CallMeBot)", False, "nenhum número ativo"))
-        else:
-            out.append(("WhatsApp (CallMeBot)", False, "desligado"))
+        elif not tg.enabled:
+            out.append(("Celular", False, "nenhum canal configurado"))
         return out
 
     def apply_config(self, cfg: Config) -> None:
@@ -400,7 +421,8 @@ class Engine:
                 s.tracker.cfg = cfg
             self.discovery.title = cfg.monitor.window_title
             self.discovery.process = cfg.monitor.process_name
-            if (old.notifiers.model_dump() != cfg.notifiers.model_dump()) or self.callmebot is None:
+            if old.notifiers.model_dump() != cfg.notifiers.model_dump() or (self.callmebot is None
+                                                                           and self.telegram is None):
                 self._build_notifiers()
         self.bus.emit("info", "configuração aplicada")
 

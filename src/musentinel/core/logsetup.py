@@ -11,6 +11,7 @@ from . import paths
 
 _PHONE = re.compile(r"(?<![\w.])\+?\d[\d \-().]{8,18}\d(?![\w.])")
 _SECRET = re.compile(r"(?i)(apikey|api_key|token|key|senha|password)=([^&\s]+)")
+_TG_TOKEN = re.compile(r"(?<!\d)\d{6,12}:[A-Za-z0-9_-]{30,}")  # token de bot do Telegram
 
 
 def _mask_phone(m: re.Match) -> str:
@@ -23,6 +24,7 @@ def _mask_phone(m: re.Match) -> str:
 def scrub(text: str) -> str:
     """Remove segredos e mascara telefones de um texto."""
     text = _SECRET.sub(lambda m: f"{m.group(1)}=***", text)
+    text = _TG_TOKEN.sub("<token-telegram>", text)
     return _PHONE.sub(_mask_phone, text)
 
 

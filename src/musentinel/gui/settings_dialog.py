@@ -34,6 +34,7 @@ seu telefone (com DDI e DDD, ex.: +55 11 99999-0000) e essa chave.</li>
 <li>Clique em <b>Testar</b>. A mensagem chega em alguns segundos.</li>
 </ol>
 Para um amigo receber também: ele faz os passos 1–3 no celular dele e você adiciona o número e a chave dele.
+<p style="color:#b26a00"><b>Atenção:</b> o CallMeBot às vezes fica sem vagas ("The bot is currently full") e não entrega a chave. Enquanto isso, use o <b>Telegram</b>.</p>
 """
 
 
@@ -161,6 +162,10 @@ class SettingsDialog(QDialog):
         lay = QVBoxLayout(self)
         self.tabs = QTabWidget()
         lay.addWidget(self.tabs)
+        from .telegram_panel import TelegramPanel
+
+        self.tg_panel = TelegramPanel(self.cfg)
+        self.tabs.addTab(self.tg_panel, "Telegram")
         self.tabs.addTab(self._tab_whatsapp(), "WhatsApp")
         self.tabs.addTab(self._tab_monitor(), "Monitor")
         self.tabs.addTab(self._tab_thresholds(), "Limiares")
@@ -168,6 +173,8 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._tab_cities(), "Cidades")
         self.tabs.addTab(self._tab_slots(), "Slots")
         if tab == "whatsapp":
+            self.tabs.setCurrentIndex(1)
+        elif tab == "telegram":
             self.tabs.setCurrentIndex(0)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.button(QDialogButtonBox.StandardButton.Ok).setText("Salvar")
@@ -366,6 +373,7 @@ class SettingsDialog(QDialog):
     def _accept(self) -> None:
         c = self.cfg
         try:
+            self.tg_panel.apply_to(c)
             c.notifiers.callmebot.enabled = self.cm_enabled.isChecked()
             c.notifiers.callmebot.recipients = self.recipients
             c.notifiers.callmebot.min_interval_s = self.cm_interval.value()

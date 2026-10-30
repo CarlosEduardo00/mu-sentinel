@@ -37,6 +37,7 @@ class Alert:
     repeats: int = 0
     last_sent: float = 0.0
     acked: bool = False
+    image: bytes | None = field(default=None, repr=False)  # print da janela (JPEG) para quem aceita imagem
 
     @property
     def key(self) -> tuple[int | None, str]:
@@ -173,8 +174,11 @@ class AlertManager:
             if not items:
                 continue
             text = self.compose(items, getattr(n, "supports_inbound", False))
+            image = None
+            if getattr(n, "supports_images", False):
+                image = next((a.image for a in items if a.image), None)
             try:
-                n.send(text)
+                n.send(text, image) if image else n.send(text)
             except Exception:
                 log.exception("notificador %s falhou", getattr(n, "name", n))
         for a in batch:
