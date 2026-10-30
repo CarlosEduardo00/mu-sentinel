@@ -285,6 +285,11 @@ class SettingsDialog(QDialog):
         f.addRow("Ciclos iguais para confirmar estado:", self.m_confirm)
         f.addRow(self.m_awake)
         f.addRow(self.m_display)
+        from ..core import autostart
+
+        self.m_autostart = QCheckBox("Iniciar com o Windows (minimizado na bandeja)")
+        self.m_autostart.setChecked(autostart.is_enabled())
+        f.addRow(self.m_autostart)
         return w
 
     def _tab_thresholds(self) -> QWidget:
@@ -398,6 +403,13 @@ class SettingsDialog(QDialog):
         if c.notifiers.callmebot.enabled and not any(secrets.has_secret(r.secret_key) for r in self.recipients):
             QMessageBox.information(self, "WhatsApp", "Nenhum número tem chave cadastrada: os alertas pelo "
                                                       "WhatsApp não vão sair até você cadastrar.")
+        from ..core import autostart
+
+        try:
+            if self.m_autostart.isChecked() != autostart.is_enabled() or self.m_autostart.isChecked():
+                autostart.set_enabled(self.m_autostart.isChecked())
+        except OSError as exc:
+            QMessageBox.warning(self, "Iniciar com o Windows", f"Não consegui alterar: {exc}")
         keep = {r.phone for r in self.recipients}
         for r in self.removed:
             if r.phone not in keep:

@@ -1,0 +1,17 @@
+{
+ "scene": "cacando",
+ "expected": {
+  "hp": "239/281",
+  "coords": "96,172",
+  "exp": "1168322/1254340",
+  "hunting_time": "00:03:55",
+  "map": "Lost Tower"
+ },
+ "auto": {
+  "hp": "OCR + coerente no tempo",
+  "coords": "template = OCR",
+  "exp": "template = OCR",
+  "hunting_time": "OCR + coerente no tempo",
+  "map": "mapa (conf 1.00)"
+ }
+}

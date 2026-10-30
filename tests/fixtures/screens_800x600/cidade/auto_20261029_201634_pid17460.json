@@ -1,0 +1,13 @@
+{
+ "scene": "cidade",
+ "expected": {
+  "coords": "120,213",
+  "hunting_time": null,
+  "map": "Lorencia"
+ },
+ "auto": {
+  "coords": "template = OCR",
+  "hunting_time": "ausente (painel fechado, OCR vazio)",
+  "map": "mapa (conf 0.96)"
+ }
+}

@@ -1,0 +1,15 @@
+{
+ "scene": "cacando",
+ "expected": {
+  "hp": "282/282",
+  "coords": "91,173",
+  "exp": "304222/1266640",
+  "map": "Lost Tower"
+ },
+ "auto": {
+  "hp": "template = OCR",
+  "coords": "template = OCR",
+  "exp": "template = OCR",
+  "map": "mapa (conf 1.00)"
+ }
+}

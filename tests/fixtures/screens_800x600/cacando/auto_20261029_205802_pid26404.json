@@ -1,0 +1,11 @@
+{
+ "scene": "cacando",
+ "expected": {
+  "hp": "821/821",
+  "exp": "72721/1912420"
+ },
+ "auto": {
+  "hp": "template = OCR",
+  "exp": "template = OCR"
+ }
+}

@@ -1,0 +1,13 @@
+{
+ "scene": "cacando",
+ "expected": {
+  "hp": "817/819",
+  "exp": "1594753/1897300",
+  "hunting_time": null
+ },
+ "auto": {
+  "hp": "template = OCR",
+  "exp": "template = OCR",
+  "hunting_time": "ausente (painel fechado, OCR vazio)"
+ }
+}

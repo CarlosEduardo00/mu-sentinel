@@ -15,16 +15,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import paths
-from ..core.config import Config
+from ..core.config import LEVEL_NAMES, RISK_TEXT, Config
 from ..core.engine import Engine, SlotSnapshot
 from ..core.events import Event, EventBus
 from ..core.notifiers.base import NotifierStatus
 from ..core.state_machine import CRITICAL, State
 from .qtutil import bgr_to_pixmap
 
-RISK_TEXT = ("A política operacional da Webzen proíbe macros e programas não oficiais e prevê banimento "
-             "permanente, inclusive de todas as contas ligadas à mesma pessoa. Os níveis 1 a 4 enviam teclas "
-             "ao jogo. Use por sua conta e risco.")
 
 STATE_COLOR = {
     State.CACANDO: "#2e9d47",
@@ -357,7 +354,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ construção
     def _build_menu(self) -> None:
         m = self.menuBar().addMenu("&Arquivo")
-        for text, fn in (("Configurações…", self.open_settings), ("Calibração…", self.open_calibration),
+        for text, fn in (("Configurações…", self.open_settings), ("Assistente de configuração…", self.open_wizard),
+                         ("Calibração…", self.open_calibration),
                          ("Abrir pasta de dados", lambda: os.startfile(paths.data_dir()))):
             a = QAction(text, self)
             a.triggered.connect(fn)
@@ -476,8 +474,7 @@ class MainWindow(QMainWindow):
         self.tray.showMessage(title, body, icon, 15000)
 
     def refresh_status(self) -> None:
-        lvl_names = ["Observador", "Assistido", "Reativo", "Rotinas", "Recuperação"]
-        self.level_lbl.setText(f"Nível {self.cfg.level} · {lvl_names[self.cfg.level]} 🔒")
+        self.level_lbl.setText(f"Nível {self.cfg.level} · {LEVEL_NAMES[self.cfg.level]} 🔒")
         a = self.engine.alerts
         if a.paused:
             until = a.paused_until
@@ -551,6 +548,14 @@ class MainWindow(QMainWindow):
         d = SettingsDialog(self.cfg, self, tab=tab if isinstance(tab, str) else None)
         if d.exec():
             self.apply_config(d.result_config())
+
+    def open_wizard(self) -> None:
+        from .wizard import SetupWizard
+
+        w = SetupWizard(self.cfg, self, discovery=self.engine.discovery)
+        if w.exec():
+            self.apply_config(w.result_config())
+            self.engine.reload_profiles()
 
     def apply_config(self, cfg: Config) -> None:
         try:

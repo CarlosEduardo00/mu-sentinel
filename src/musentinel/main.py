@@ -4,6 +4,7 @@ Uso:
     musentinel               abre o painel
     musentinel --minimizado  começa só na bandeja
     musentinel --calibracao  abre só a tela de calibração
+    musentinel --smoke-test  abre, carrega a config, roda 1 ciclo do monitor e fecha (teste do .exe)
 """
 
 from __future__ import annotations
@@ -50,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="musentinel")
     ap.add_argument("--minimizado", action="store_true", help="começa só na bandeja")
     ap.add_argument("--calibracao", action="store_true", help="abre só a tela de calibração")
+    ap.add_argument("--smoke-test", action="store_true", help="abre, roda 1 ciclo e fecha (código 0 = ok)")
+    ap.add_argument("--assistente", action="store_true", help="abre o assistente de configuração")
     a = ap.parse_args(argv)
 
     if a.calibracao:
@@ -61,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     from .core.logsetup import setup_logging
 
     winapi.enable_dpi_awareness()
-    mutex = single_instance()
+    mutex = single_instance() if not a.smoke_test else object()
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -91,6 +94,18 @@ def main(argv: list[str] | None = None) -> int:
     sys.excepthook = excepthook
     threading.excepthook = lambda args: excepthook(args.exc_type, args.exc_value, args.exc_traceback)
 
+    if a.smoke_test:
+        return smoke_test(cfg, bus, store)
+
+    if not cfg.wizard_done or a.assistente:
+        from .gui.wizard import SetupWizard
+
+        wiz = SetupWizard(cfg)
+        if wiz.exec():
+            cfg = wiz.result_config()
+            cfg.save()
+            a.minimizado = False
+
     win = MainWindow(cfg, bus, start_hidden=a.minimizado)
     if warn:
         QMessageBox.warning(win, "Configuração", warn)
@@ -98,6 +113,33 @@ def main(argv: list[str] | None = None) -> int:
     rc = app.exec()
     store.close()
     return rc
+
+
+def smoke_test(cfg, bus, store) -> int:
+    """Teste do executável empacotado: tudo carrega e o monitor completa um ciclo."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+
+    from .core import paths
+    from .gui.main_window import MainWindow
+
+    result = {"rc": 1}
+    win = MainWindow(cfg, bus, start_hidden=True)
+
+    def check():
+        ok = win.engine.last_cycle > 0
+        result["rc"] = 0 if ok else 2
+        (paths.data_dir() / "smoke_test.txt").write_text(
+            f"ok={ok} ciclo_ms={win.engine.cycle_ms:.0f} slots={len(win.engine.slots)}\n", encoding="utf-8")
+        win.engine.stop()
+        win.tray.hide()
+        QApplication.quit()
+
+    QTimer.singleShot(12000, check)
+    QApplication.instance().exec()
+    store.close()
+    log.info("smoke test: código %s", result["rc"])
+    return result["rc"]
 
 
 if __name__ == "__main__":

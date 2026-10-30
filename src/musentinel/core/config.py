@@ -18,6 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from . import paths
 
 SCHEMA_VERSION = 1
+RISK_TEXT = ("A política operacional da Webzen proíbe macros e programas não oficiais e prevê banimento "
+             "permanente, inclusive de todas as contas ligadas à mesma pessoa. Os níveis 1 a 4 enviam teclas "
+             "ao jogo. Use por sua conta e risco.")
+LEVEL_NAMES = ["Observador", "Assistido", "Reativo", "Rotinas", "Recuperação"]
 DEFAULT_CITIES = ["Lorencia", "Devias", "Noria", "Elbeland"]
 
 
@@ -121,6 +125,7 @@ class SlotConfig(_Model):
 
 class Config(_Model):
     schema_version: int = Field(SCHEMA_VERSION, alias="versao")
+    wizard_done: bool = Field(False, alias="assistente_concluido")
     level: int = Field(0, alias="nivel", ge=0, le=4)
     cities: list[str] = Field(default_factory=lambda: list(DEFAULT_CITIES), alias="cidades")
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)

@@ -354,14 +354,20 @@ def read_text_ex(
 
 
 UNCOVERED_MAX = 3  # colunas seguidas com tinta e sem caractere
+SMALL_FONT_H = 12  # altura de linha (px) a partir da qual a fonte é "grande" (1280x960)
 
 
 def _uncovered_ink(im: np.ndarray, chosen: list[Hit], line_y: int) -> int:
     h = max(c.h for c in chosen)
     band = im[line_y : line_y + h]
-    thr = max(100.0, 0.6 * float(band.max()))
+    peak = float(band.max())
+    if h <= SMALL_FONT_H:
+        # fonte pequena (janela 800x600): traço de 1 px, mais apagado pelo antisserrilhado
+        thr, min_px = max(60.0, 0.45 * peak), 2
+    else:
+        thr, min_px = max(100.0, 0.6 * peak), max(2, int(0.3 * h))
     # conta só colunas com traço de letra (respingo de magia ao fundo é baixinho)
-    cols = (band >= thr).sum(axis=0) >= max(2, int(0.3 * h))
+    cols = (band >= thr).sum(axis=0) >= min_px
     covered = np.zeros_like(cols)
     for c in chosen:
         covered[max(0, c.x - 1) : c.x + c.w + 1] = True

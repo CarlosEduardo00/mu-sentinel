@@ -9,3 +9,5 @@ captures/
 .pytest_cache/
 reports/
 *.egg-info/
+.build-venv/
+smoke_test.txt

@@ -16,6 +16,13 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def resource_dir() -> Path:
+    """Arquivos que vêm com o app (perfis-semente, ícone). No .exe ficam na pasta _internal."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parents[3]
+
+
 def data_dir() -> Path:
     """Modo portátil se existir portable.flag ao lado do .exe; senão %APPDATA%."""
     if (app_dir() / "portable.flag").exists():
@@ -52,7 +59,7 @@ def parse_size(text: str) -> tuple[int, int]:
 
 
 def seed_profile_path(width: int, height: int) -> Path:
-    return app_dir() / "assets" / "profiles" / f"{width}x{height}.json"
+    return resource_dir() / "assets" / "profiles" / f"{width}x{height}.json"
 
 
 def has_profile(width: int, height: int) -> bool:

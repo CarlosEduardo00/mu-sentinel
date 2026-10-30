@@ -7,7 +7,7 @@ desconexão, travamento e caça parada, e avisa pelo WhatsApp.
 > permanente, inclusive de todas as contas ligadas à mesma pessoa. Os níveis 1 a 4 enviam teclas
 > ao jogo. Use por sua conta e risco.
 
-**Estado atual: Fase 1 — monitor + alertas (nível 0 · Observador).** O app só lê a imagem das janelas e
+**Estado atual: Fase 2 — executável para distribuir (nível 0 · Observador).** O app só lê a imagem das janelas e
 informações do Windows; nenhuma tecla é enviada ao jogo.
 
 ## Abrir o app
@@ -19,6 +19,21 @@ informações do Windows; nenhuma tecla é enviada ao jogo.
 
 Fechar a janela só esconde o painel: o monitor continua na bandeja (botão direito no ícone → Sair).
 Só abre uma instância por vez.
+
+Na primeira vez abre o **assistente** (janelas, perfil, WhatsApp, nível, iniciar com o Windows);
+para refazer: *Arquivo → Assistente de configuração* ou `--assistente`.
+
+## Gerar o executável para os amigos
+
+```powershell
+.uild.ps1
+```
+
+Cria um venv limpo, roda os testes, gera `dist\MUSentinel\` (PyInstaller onedir, sem UPX), faz o
+smoke test do `.exe` com dados zerados e compacta em `MUSentinel-vX.Y.Z-win64.zip`. O zip leva o
+`LEIA-ME.md` com o passo a passo para quem vai usar. A versão vem do `pyproject.toml`.
+Assinatura de código opcional: variável `MUSENTINEL_SIGN_CMD` (ver o topo do `build.ps1`).
+Antes de distribuir, teste o zip numa máquina/VM sem Python.
 
 ## WhatsApp: cada um recebe no seu número
 

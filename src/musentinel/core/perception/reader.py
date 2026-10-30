@@ -93,6 +93,11 @@ class HudReader:
                 # texto fora do alinhamento de sempre: provavelmente meio coberto por um menu
                 return unreadable(text, min(conf, 0.4))
             r = self._gate(PARSERS[name](text, conf))
+            if r.ok and self.profile.missing_chars(name):
+                # A fonte deste campo ainda não tem todos os dígitos próprios (os que faltam vêm
+                # emprestados de outro campo, com outro fundo). Um dígito desconhecido pode casar
+                # com o modelo errado (6 lido como 5): só vale se o OCR confirmar o mesmo valor.
+                return self._ocr_confirm(name, crop, r) if self.ocr_fallback else unreadable(text, UNKNOWN_CHAR_CONF)
             if not r.ok and self.ocr_fallback and conf <= UNKNOWN_CHAR_CONF:
                 r = self._ocr_rescue(name, crop, text) or r
             return r
@@ -122,6 +127,15 @@ class HudReader:
             return FieldReading(self.panel_open(image), 1.0, "", "ok")
 
         return unreadable("tipo de campo desconhecido")
+
+    def _ocr_confirm(self, name: str, crop: np.ndarray, r: FieldReading) -> FieldReading:
+        """Template e OCR (duas escalas) precisam dar o mesmo valor; senão, ilegível."""
+        text, score = self.ocr.read_number(crop, CHARSETS[name])
+        if text and score >= self.min_confidence:
+            o = PARSERS[name](text, score)
+            if o.ok and o.value == r.value:
+                return r
+        return unreadable(r.raw, 0.4)
 
     def _ocr_rescue(self, name: str, crop: np.ndarray, partial: str) -> FieldReading | None:
         """O template achou tinta que não reconhece (dígito ainda não aprendido).

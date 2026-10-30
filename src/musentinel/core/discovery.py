@@ -81,33 +81,44 @@ class Discovery:
             if not w.minimized:
                 b.rect = self._rect_of(w)
 
-        for w in sorted(by_hwnd.values(), key=lambda w: (self._rect_of(w)[0], self._rect_of(w)[1], w.pid)):
-            rect = self._rect_of(w)
-            slot = self._pick_slot(rect)
-            self.vacant.pop(slot, None)
-            self.active[slot] = SlotBinding(slot, w.hwnd, w.pid, rect, w)
+        new = sorted(by_hwnd.values(), key=lambda w: (self._rect_of(w)[0], self._rect_of(w)[1], w.pid))
+        rects = {w.hwnd: self._rect_of(w) for w in new}
+        # 1ª passada: janela reaberta no mesmo lugar herda o slot (o par mais próximo primeiro)
+        pairs = sorted(
+            ((_distance(vb.rect, rects[w.hwnd]), slot, w) for w in new for slot, vb in self.vacant.items()
+             if _distance(vb.rect, rects[w.hwnd]) <= NEAR_PX),
+            key=lambda t: (t[0], t[1]),
+        )
+        taken_w: set[int] = set()
+        for d, slot, w in pairs:
+            if w.hwnd in taken_w or slot not in self.vacant:
+                continue
+            others = [s2 for d2, s2, w2 in pairs if w2.hwnd == w.hwnd and s2 != slot and s2 in self.vacant
+                      and d2 - d < 10]
+            if others:
+                self.events.append(
+                    f"associação ambígua: janela nova pode ser o slot {slot} ou {others[0]}; usei o {slot}."
+                )
+            self._bind(slot, w, rects[w.hwnd])
+            taken_w.add(w.hwnd)
+        # 2ª passada: as demais pegam o menor número livre. Slots lembrados de outra execução
+        # (sem janela nesta sessão) não ficam reservados; os que fecharam nesta sessão ficam.
+        for w in new:
+            if w.hwnd in taken_w:
+                continue
+            reserved = set(self.active) | {s for s, vb in self.vacant.items() if vb.hwnd}
+            n = 1
+            while n in reserved:
+                n += 1
+            if n > 8 and self.vacant:
+                n = min(self.vacant)  # não cria slots infinitos
+            self._bind(n, w, rects[w.hwnd])
         self._save()
         return dict(self.active)
 
-    def _pick_slot(self, rect) -> int:
-        if self.vacant:
-            ranked = sorted(self.vacant.items(), key=lambda kv: (_distance(kv[1].rect, rect), kv[0]))
-            best_slot, best = ranked[0]
-            d = _distance(best.rect, rect)
-            if d <= NEAR_PX:
-                if len(ranked) > 1 and _distance(ranked[1][1].rect, rect) <= NEAR_PX:
-                    self.events.append(
-                        f"associação ambígua: janela nova pode ser o slot {best_slot} ou {ranked[1][0]}; "
-                        f"usei o {best_slot}. Troque em Configurações se estiver errado."
-                    )
-                return best_slot
-        used = set(self.active) | set(self.vacant)
-        n = 1
-        while n in used:
-            n += 1
-        if self.vacant and len(used) >= 8:
-            return min(self.vacant)  # não cria slots infinitos: reaproveita o vago mais antigo
-        return n
+    def _bind(self, slot: int, w: winapi.WindowInfo, rect) -> None:
+        self.vacant.pop(slot, None)
+        self.active[slot] = SlotBinding(slot, w.hwnd, w.pid, rect, w)
 
     def known_slots(self) -> list[int]:
         return sorted(set(self.active) | set(self.vacant))

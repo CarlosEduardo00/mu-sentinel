@@ -1,0 +1,13 @@
+{
+ "scene": "cidade",
+ "expected": {
+  "exp": "38885/1266640",
+  "hunting_time": null,
+  "map": "Devias"
+ },
+ "auto": {
+  "exp": "template = OCR",
+  "hunting_time": "ausente (painel fechado, OCR vazio)",
+  "map": "mapa (conf 1.00)"
+ }
+}

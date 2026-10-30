@@ -1,0 +1,15 @@
+{
+ "scene": "cacando",
+ "expected": {
+  "hp": "208/208",
+  "coords": "51,224",
+  "exp": "7026/79300",
+  "hunting_time": null
+ },
+ "auto": {
+  "hp": "template = OCR",
+  "coords": "template = OCR",
+  "exp": "OCR + coerente no tempo",
+  "hunting_time": "ausente (painel fechado, OCR vazio)"
+ }
+}

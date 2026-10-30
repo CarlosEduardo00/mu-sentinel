@@ -243,3 +243,24 @@ def test_frame_watcher():
     assert fw.update(a, 0) == 0
     assert fw.update(a, 10) == 10
     assert fw.update(b, 12) == 0
+
+
+def test_discovery_remembered_slots_do_not_block_numbers(tmp_path):
+    store = tmp_path / "s.json"
+    rects = {1: (0, 0, 800, 600), 2: (900, 0, 800, 600), 7: (0, 700, 800, 600), 8: (900, 700, 800, 600)}
+    d = Discovery(lister=lambda: [win(1, 100), win(2, 200)], rect_of=lambda w: rects[w.hwnd], store=store)
+    d.refresh()
+    # nova execução, janelas em outros lugares: continuam 1 e 2 (não viram 3 e 4)
+    d2 = Discovery(lister=lambda: [win(7, 700), win(8, 800)], rect_of=lambda w: rects[w.hwnd], store=store)
+    assert sorted(d2.refresh()) == [1, 2]
+
+
+def test_discovery_closed_slot_reserved_in_same_session(tmp_path):
+    rects = {1: (0, 0, 800, 600), 2: (900, 0, 800, 600), 3: (0, 700, 800, 600)}
+    wins = [win(1, 100), win(2, 200)]
+    d = Discovery(lister=lambda: wins, rect_of=lambda w: rects[w.hwnd], store=None)
+    d.refresh()
+    wins[:] = [win(2, 200)]
+    d.refresh()  # slot 1 fechou (fica FECHADO no painel)
+    wins.append(win(3, 300))  # outra janela abriu em outro lugar: não rouba o slot 1
+    assert d.refresh()[3].pid == 300
