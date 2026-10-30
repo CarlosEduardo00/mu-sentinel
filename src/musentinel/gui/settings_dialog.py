@@ -349,18 +349,16 @@ class SettingsDialog(QDialog):
     def _tab_slots(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.addWidget(QLabel("Nome de cada slot (aparece nos alertas). O teto de nível vale a partir da Fase 3."))
+        v.addWidget(QLabel("Nome de cada slot (aparece nos alertas)."))
         slots = sorted(self.cfg.slots.items())
-        self.stable = QTableWidget(len(slots), 3)
-        self.stable.setHorizontalHeaderLabels(["Slot", "Nome", "Teto de nível"])
+        self.stable = QTableWidget(len(slots), 2)
+        self.stable.setHorizontalHeaderLabels(["Slot", "Nome"])
         self.stable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         for i, (n, s) in enumerate(slots):
             it = QTableWidgetItem(str(n))
             it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.stable.setItem(i, 0, it)
             self.stable.setItem(i, 1, QTableWidgetItem(s.name))
-            sp = _spin(s.level_cap, 0, 4)
-            self.stable.setCellWidget(i, 2, sp)
         v.addWidget(self.stable)
         return w
 
@@ -395,7 +393,6 @@ class SettingsDialog(QDialog):
                 n = int(self.stable.item(i, 0).text())
                 s = c.slot(n)
                 s.name = self.stable.item(i, 1).text().strip() or f"Slot {n}"
-                s.level_cap = self.stable.cellWidget(i, 2).value()
             Config.model_validate(c.model_dump(by_alias=True))
         except Exception as exc:
             QMessageBox.warning(self, "Configurações", f"Valor inválido: {exc}")

@@ -7,8 +7,9 @@ desconexão, travamento e caça parada, e avisa pelo WhatsApp.
 > permanente, inclusive de todas as contas ligadas à mesma pessoa. Os níveis 1 a 4 enviam teclas
 > ao jogo. Use por sua conta e risco.
 
-**Estado atual: Fase 2 — executável para distribuir (nível 0 · Observador).** O app só lê a imagem das janelas e
-informações do Windows; nenhuma tecla é enviada ao jogo.
+**Estado atual: só nível 0 (Observador), por decisão do dono do projeto.** O app só lê a imagem das
+janelas e informações do Windows; **nunca** envia teclas ao jogo. As ações que enviam teclas (níveis 1 a 4)
+não serão feitas, para não correr risco de banimento.
 
 ## Abrir o app
 
@@ -23,7 +24,13 @@ Só abre uma instância por vez.
 Na primeira vez abre o **assistente** (janelas, perfil, WhatsApp, nível, iniciar com o Windows);
 para refazer: *Arquivo → Assistente de configuração* ou `--assistente`.
 
-## Gerar o executável para os amigos
+## Gerar o executável (bloqueado pelo GameGuard)
+
+> **Atenção:** o nProtect GameGuard que roda com o MU restringe o `MUSentinel.exe` empacotado: poucos
+> segundos depois de abrir, o Windows deixa de informar de qual processo são as janelas do jogo e o
+> monitoramento para. O app detecta e avisa ("MONITORAMENTO BLOQUEADO PELO ANTI-CHEAT") e **não tenta
+> contornar a proteção**. Rodando pelo código-fonte (`python.exe`) isso não aconteceu nos testes.
+> Por isso o zip não está sendo distribuído.
 
 ```powershell
 .\build.ps1

@@ -266,12 +266,12 @@ class LevelPage(QWizardPage):
             rb = QRadioButton(f"Nível {n} · {LEVEL_NAMES[n]}: {d}")
             if n > 0:
                 rb.setEnabled(False)
-                rb.setToolTip("Travado: os níveis 1 a 4 só ficam disponíveis depois do teste de input "
-                              "(chega numa versão futura).")
+                rb.setToolTip("Desativado: o MU Sentinel não envia teclas ao jogo.")
             self.group.addButton(rb, n)
             v.addWidget(rb)
         self.group.button(0).setChecked(True)
-        note = QLabel("Os níveis 1 a 4 ficam travados nesta versão: o app é só Observador.")
+        note = QLabel("Os níveis 1 a 4 estão desativados: o MU Sentinel só observa e avisa, "
+                      "nunca envia teclas ao jogo.")
         note.setStyleSheet("color:#888;")
         v.addWidget(note)
         v.addStretch()

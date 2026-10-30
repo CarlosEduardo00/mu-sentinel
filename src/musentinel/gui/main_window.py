@@ -185,7 +185,7 @@ class SlotCard(QFrame):
             f"<tr><td>Hunting Time</td><td>{ht}</td></tr>"
             f"<tr><td>Servidor</td><td>{conn}</td></tr>"
             f"<tr><td>Último evento</td><td>{s.last_event or '—'}</td></tr>"
-            f"<tr><td>Nível</td><td>{self.win.cfg.level} (teto do slot: {s.level_cap})</td></tr>"
+            f"<tr><td>Nível</td><td>0 · Observador</td></tr>"
             f"</table>")
         self.note.setText(s.note)
         if s.thumb is not None:
@@ -375,7 +375,7 @@ class MainWindow(QMainWindow):
         self.level_lbl = QLabel()
         self.level_lbl.setStyleSheet("font-weight:bold; padding:0 8px;")
         self.level_lbl.setToolTip("Nível 0 · Observador: só monitora e avisa; nenhuma tecla é enviada ao jogo.\n"
-                                  "Os níveis 1 a 4 ficam travados até o teste de input (Fase 3).")
+                                  "Os níveis 1 a 4 estão desativados: o MU Sentinel nunca envia teclas ao jogo.")
         tb.addWidget(self.level_lbl)
         tb.addSeparator()
         self.pause_btn = QToolButton()
