@@ -232,6 +232,40 @@ def test_shop_sale_needs_two_reads_and_ignores_withdrawals(service, imgs, monkey
     assert "+2 itens" in got[8][0].detail
 
 
+def test_gremory_sale_in_any_window_and_while_app_closed(scanned, imgs, ocr, monkeypatch, tmp_path):
+    """Gremory Case aberto em janela que não se chama Loja também avisa; venda com o app fechado também."""
+    def fake_scan(img, _ocr, kinds=P.KINDS):
+        key = min(imgs, key=lambda k: float(np.mean(cv2.absdiff(img, imgs[k]))))
+        return scanned[key]
+
+    monkeypatch.setattr(panels_mod.P, "scan", fake_scan)
+    monkeypatch.setattr(panels_mod.P, "same_image", lambda a, b, tol=4.0: False)
+    seq = iter([3, 3, 4, 4])
+    monkeypatch.setattr(panels_mod.P, "read_shop_counter", lambda img, hit, o: (next(seq), 150))
+    store = tmp_path / "contagem.json"
+    clock = {"t": 1000.0}
+
+    def run(svc, n):
+        out = []
+        for _ in range(n):
+            clock["t"] += 10
+            out += [e for e in svc.check(2, imgs["loja_gremory"], live=True, user_active=False, is_shop=False,
+                                         shop_key="Vendedor") if e.kind == "venda"]
+        return out
+
+    svc = PanelService(ocr=ocr, clock=lambda: clock["t"], store=store)
+    assert run(svc, 2) == []  # base 3
+    sales = run(svc, 2)
+    assert len(sales) == 1 and "3 → 4" in sales[0].detail
+    cnt, cap, sold = svc.shop_status(2)
+    assert (cnt, cap, sold) == (4, 150, clock["t"])
+    # app fechado; ao abrir de novo o Gremory já tem 6 itens
+    monkeypatch.setattr(panels_mod.P, "read_shop_counter", lambda img, hit, o: (6, 150))
+    again = PanelService(ocr=ocr, clock=lambda: clock["t"], store=store)
+    sales = run(again, 1)
+    assert len(sales) == 1 and "enquanto o MU Sentinel estava fechado: 4 → 6" in sales[0].detail
+
+
 def test_shop_counter_skips_ocr_when_unchanged(service, imgs, monkeypatch):
     calls = []
 

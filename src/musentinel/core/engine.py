@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 THUMB_W = 320
 AUTOCAL_BAD_CYCLES = 15  # HP/EXP ilegível por ~30 s seguidos → calibra a janela sozinho
 AUTOCAL_EVERY_S = 600  # no máximo 1 calibração automática a cada 10 min por janela
+SHOP_COUNTS_FILE = "loja_contagem.json"  # última contagem do Gremory Case de cada janela
 PROTECTION_TITLE = "MONITORAMENTO LIMITADO PELO ANTI-CHEAT"
 PROTECTION_NOTE = ("o anti-cheat do jogo (GameGuard) não deixa o MU Sentinel ver de qual processo são as "
                    "janelas do MU; o app segue pela imagem da janela, mas sem checar a conexão com o servidor "
@@ -65,6 +66,7 @@ class SlotSnapshot:
     connected: bool | None = None
     shop: bool = False
     panels: list[str] = field(default_factory=list)  # painéis vistos abertos (ver perception.panels.KINDS)
+    shop_status: tuple[int, int, float | None] | None = None  # Gremory Case: (itens, capacidade, última venda)
     thumb: np.ndarray | None = field(default=None, repr=False)
 
 
@@ -96,7 +98,7 @@ class Engine:
         self.telegram: TelegramNotifier | None = None
         self.listener: TelegramCommandListener | None = None
         self.alerts = AlertManager(config, [], level=lambda: self.cfg.level, on_sent=self._on_sent)
-        self.panels = PanelService()
+        self.panels = PanelService(store=paths.data_dir() / SHOP_COUNTS_FILE)
         self.remote = RemoteCommands(self, store=paths.data_dir() / TARGETS_FILE)
         self._panels_thread: threading.Thread | None = None
         self._build_notifiers()
@@ -247,13 +249,14 @@ class Engine:
                 if s.frame is None or now < next_due[n]:
                     continue
                 shop = cfg.is_shop(n)
-                next_due[n] = now + (cfg.panels.shop_interval_s if shop else cfg.panels.interval_s)
-                due.append((n, s.frame.copy(), s.tracker.view.state in self.PANEL_LIVE, shop))
+                gremory = shop or "loja" in self.panels.open_panels(n)  # vendas: checa mais vezes
+                next_due[n] = now + (cfg.panels.shop_interval_s if gremory else cfg.panels.interval_s)
+                due.append((n, s.frame.copy(), s.tracker.view.state in self.PANEL_LIVE, shop, cfg.slot_name(n)))
         if not due:
             return
         user_active = health.user_idle_s() < cfg.thresholds.city_grace_s
-        for n, img, live, shop in due:
-            for ev in self.panels.check(n, img, live=live, user_active=user_active, is_shop=shop):
+        for n, img, live, shop, name in due:
+            for ev in self.panels.check(n, img, live=live, user_active=user_active, is_shop=shop, shop_key=name):
                 self._panel_event(n, ev)
 
     def _panel_event(self, n: int, ev: PanelEvent) -> None:
@@ -611,6 +614,7 @@ class Engine:
                     hunting_time=v.hunting_time, note=v.note, last_event=s.last_event,
                     level_cap=self.cfg.slot(n).level_cap, connected=s.connected,
                     shop=self.cfg.is_shop(n), panels=self.panels.open_panels(n),
+                    shop_status=self.panels.shop_status(n),
                     thumb=None if s.thumb is None else s.thumb.copy()))
         return out
 

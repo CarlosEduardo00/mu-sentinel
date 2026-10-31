@@ -2,6 +2,7 @@
 # PyInstaller: MU Sentinel em modo onedir (pasta com .exe), sem UPX.
 # Uso: pyinstaller --noconfirm musentinel.spec   (o build.ps1 já faz isso)
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -11,7 +12,8 @@ from PyInstaller.utils.win32.versioninfo import (
 )
 
 ROOT = Path(SPECPATH)
-VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+VERSION = re.search(r'__version__ = "([^"]+)"', (ROOT / "src" / "musentinel" / "_version.py")
+                    .read_text(encoding="utf-8")).group(1)
 nums = tuple(int(x) for x in (VERSION.split(".") + ["0"] * 4)[:4])
 
 version_info = VSVersionInfo(
@@ -35,6 +37,7 @@ datas = [
     (str(ROOT / "assets" / "profiles"), "assets/profiles"),
     (str(ROOT / "assets" / "musentinel.ico"), "assets"),
     (str(ROOT / "assets" / "musentinel.png"), "assets"),
+    (str(ROOT / "CHANGELOG.md"), "."),  # novidades mostradas ao abrir uma versão nova
 ]
 datas += collect_data_files("rapidocr_onnxruntime")  # modelos .onnx e config do OCR
 binaries = []

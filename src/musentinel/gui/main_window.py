@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
+from .. import __version__
 from ..core import paths
 from ..core.config import LEVEL_NAMES, RISK_TEXT, Config
 from ..core.engine import Engine, SlotSnapshot
@@ -184,6 +185,10 @@ class SlotCard(QFrame):
         conn = {True: "conectado", False: "<b style='color:#c62828'>sem conexão</b>", None: "—"}[s.connected]
         short = {"personagem": "C", "inventario": "I", "caca": "Caçada", "loja": "Gremory"}
         panels_text = ", ".join(short[k] for k in s.panels) or "—"
+        if s.shop_status and "loja" in s.panels:
+            cnt, cap, sold = s.shop_status
+            panels_text += f" · Gremory <b>{cnt}/{cap}</b>" + (
+                f" · última venda {time.strftime('%H:%M', time.localtime(sold))}" if sold else "")
         if s.shop and "loja" not in s.panels:
             panels_text += " <b style='color:#b26a00'>(abra o Gremory Case)</b>"
         self.info.setText(
@@ -359,8 +364,58 @@ class MainWindow(QMainWindow):
         self._tick.start(1000)
         self.engine.start()
         self.refresh_status()
+        self._build_footer()
         if not start_hidden:
             self.show()
+        self._pending_notes = self._new_version_notes()
+        if self._pending_notes:
+            if start_hidden:  # aberto minimizado (início com o Windows): avisa na bandeja
+                self.tray.showMessage("MU Sentinel atualizado", f"Versão {__version__}: abra o app para ver as "
+                                      "novidades.", QSystemTrayIcon.MessageIcon.Information, 8000)
+            else:
+                QTimer.singleShot(800, self.show_whats_new)
+
+    # ------------------------------------------------------------------ versão e novidades
+    def _build_footer(self) -> None:
+        v = QLabel(f"MU Sentinel v{__version__} · <a href='novidades'>novidades</a>")
+        v.setTextFormat(Qt.TextFormat.RichText)
+        v.setStyleSheet("color:#888; padding:0 6px;")
+        v.setToolTip("Versão instalada. Clique em 'novidades' para ver o que mudou.")
+        v.linkActivated.connect(lambda _: self.show_whats_new(all_versions=True))
+        self.statusBar().addPermanentWidget(v)
+        self.version_label = v
+
+    def _new_version_notes(self) -> str:
+        """Novidades desde a última versão que o usuário viu (só para quem já usava o app)."""
+        from ..core import changelog
+
+        last = self.cfg.last_seen_version
+        if last == __version__ or not self.cfg.wizard_done:
+            return ""
+        if last and not changelog.is_newer(__version__, last):
+            return ""
+        try:
+            return changelog.notes_since(last, __version__)
+        except Exception:
+            return ""
+
+    def show_whats_new(self, all_versions: bool = False) -> None:
+        from ..core import changelog
+
+        notes = self._pending_notes if not all_versions else ""
+        if not notes:
+            p = changelog.changelog_path()
+            notes = p.read_text(encoding="utf-8") if p.exists() else "Sem arquivo de novidades."
+        box = QMessageBox(self)
+        box.setWindowTitle(f"Novidades — MU Sentinel {__version__}")
+        box.setTextFormat(Qt.TextFormat.MarkdownText)
+        box.setText(notes)
+        box.exec()
+        self._pending_notes = ""
+        if self.cfg.last_seen_version != __version__:
+            cfg = self.cfg.model_copy(deep=True)
+            cfg.last_seen_version = __version__
+            self.apply_config(cfg)
 
     # ------------------------------------------------------------------ construção
     def _build_menu(self) -> None:
@@ -473,6 +528,8 @@ class MainWindow(QMainWindow):
         super().showEvent(e)
         if getattr(self, "_last_snaps", None):
             self._render(self._last_snaps)  # voltou da bandeja: mostra o estado mais recente na hora
+        if getattr(self, "_pending_notes", ""):
+            QTimer.singleShot(500, self.show_whats_new)  # atualizado com o app minimizado
 
     def changeEvent(self, e):  # noqa: N802
         super().changeEvent(e)

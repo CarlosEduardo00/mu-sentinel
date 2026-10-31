@@ -7,9 +7,4 @@ import os as _os
 for _k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
     _os.environ.setdefault(_k, "1")
 
-from importlib.metadata import PackageNotFoundError, version  # noqa: E402
-
-try:
-    __version__ = version("musentinel")
-except PackageNotFoundError:  # rodando direto do código-fonte
-    __version__ = "0.0.0-dev"
+from ._version import __version__  # noqa: E402,F401

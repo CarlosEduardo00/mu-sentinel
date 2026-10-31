@@ -237,7 +237,12 @@ class RemoteCommands:
             opened = [P.LABEL[k].split(" (")[0] for k in self.engine.panels.open_panels(s.slot)]
             if opened:
                 line += "\n   Painéis abertos: " + ", ".join(opened)
-            if self.engine.cfg.is_shop(s.slot):
+            shop = getattr(s, "shop_status", None)
+            if shop:
+                cnt, cap, sold = shop
+                line += f"\n   🏪 Gremory Case: {cnt}/{cap}" + (
+                    f" · última venda {time.strftime('%H:%M', time.localtime(sold))}" if sold else "")
+            elif self.engine.cfg.is_shop(s.slot):
                 line += "\n   (loja)"
             out.append(line)
         if getattr(self.engine.alerts, "paused", False):

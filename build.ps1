@@ -21,8 +21,9 @@ function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what falhou (código 
 $py = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"
 if (-not (Test-Path $py)) { $py = (Get-Command py -ErrorAction Stop).Source; $pyArgs = @("-3.12") } else { $pyArgs = @() }
 
-$version = & $py @pyArgs -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
-Check "ler versão"
+# versão: src\musentinel\_version.py é o único lugar onde ela é definida
+$version = [regex]::Match((Get-Content "src\musentinel\_version.py" -Raw -Encoding UTF8), '__version__ = "([^"]+)"').Groups[1].Value
+if (-not $version) { throw "não achei __version__ em src\musentinel\_version.py" }
 $zip = "MUSentinel-v$version-win64.zip"
 Write-Host "MU Sentinel $version"
 
@@ -47,6 +48,7 @@ Step "PyInstaller (onedir, sem UPX)"
 & $vpy -m PyInstaller --noconfirm --clean musentinel.spec; Check "PyInstaller"
 $out = "dist\MUSentinel"
 Copy-Item LEIA-ME.md $out
+Copy-Item CHANGELOG.md "$out\NOVIDADES.md"
 # Aparece em primeiro ao lado do exe para quem abre o zip sem extrair
 Copy-Item packaging\EXTRAIA-ANTES.txt "$out\!! EXTRAIA O ZIP ANTES DE ABRIR !!.txt"
 

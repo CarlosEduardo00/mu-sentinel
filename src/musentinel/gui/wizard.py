@@ -353,6 +353,10 @@ class SetupWizard(QWizard):
         self.setButtonText(QWizard.WizardButton.CancelButton, "Cancelar")
 
     def accept(self) -> None:
+        from .. import __version__
+
+        if not self.cfg.wizard_done:  # instalação nova: as novidades começam a contar desta versão
+            self.cfg.last_seen_version = __version__
         self.cfg.wizard_done = True
         super().accept()
 

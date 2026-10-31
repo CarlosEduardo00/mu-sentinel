@@ -9,10 +9,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 import cv2
@@ -60,9 +62,13 @@ def jpeg(img: np.ndarray, quality: int = 85) -> bytes | None:
 
 
 class PanelService:
-    def __init__(self, ocr: OcrEngine | None = None, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, ocr: OcrEngine | None = None, clock: Callable[[], float] = time.time,
+                 store: Path | None = None) -> None:
         self._ocr = ocr
         self._clock = clock
+        self._store = store  # última contagem do Gremory Case por janela (aviso de venda com o app fechado)
+        self._counts: dict[str, int] = self._load_counts()
+        self._shop_pub: dict[int, tuple[int, int, float | None]] = {}
         self._lock = threading.RLock()  # um OCR por vez; leituras de slots diferentes não se misturam
         self._slots: dict[int, _SlotState] = {}
         # painéis abertos por slot, para o monitor consultar sem esperar uma varredura (que leva segundos)
@@ -84,6 +90,7 @@ class PanelService:
             self._slots.pop(slot, None)
             self._open.pop(slot, None)
             self._hits_pub.pop(slot, None)
+            self._shop_pub.pop(slot, None)
 
     def open_panels(self, slot: int) -> list[str]:
         """Painéis vistos abertos na última checagem, na ordem de P.KINDS. Não espera o OCR."""
@@ -122,7 +129,7 @@ class PanelService:
 
     # ------------------------------------------------------------------ checagem periódica
     def check(self, slot: int, img: np.ndarray, *, live: bool, user_active: bool,
-              is_shop: bool) -> list[PanelEvent]:
+              is_shop: bool, shop_key: str | None = None) -> list[PanelEvent]:
         with self._lock:
             st = self._st(slot)
             if not live:  # morto/desconectado/travado: o alerta crítico já cobre; não conta painel sumido
@@ -162,17 +169,40 @@ class PanelService:
                     what = "não está aberto" if k not in st.seen else "fechou"
                     events.append(PanelEvent("fechou", k, f"{P.LABEL[k]} {what}: {P.HOW_TO_OPEN[k]} para eu "
                                                           "continuar acompanhando"))
-            if is_shop and "loja" in st.hits:
-                events += self._check_shop(st, img)
+            if "loja" in st.hits:  # vendas: em qualquer janela com o Gremory Case aberto (não só na "Loja")
+                events += self._check_shop(st, img, slot, is_shop, shop_key or f"slot {slot}")
             self._publish(slot, st)
             return events
 
-    def _check_shop(self, st: _SlotState, img: np.ndarray) -> list[PanelEvent]:
+    # ------------------------------------------------------------------ Gremory Case (vendas)
+    def shop_status(self, slot: int) -> tuple[int, int, float | None] | None:
+        """(itens, capacidade, hora da última venda) do Gremory Case desta janela, se já foi lido."""
+        return self._shop_pub.get(slot)
+
+    def _load_counts(self) -> dict[str, int]:
+        try:
+            if self._store and self._store.exists():
+                return {str(k): int(v) for k, v in json.loads(self._store.read_text(encoding="utf-8")).items()}
+        except Exception:
+            log.warning("não consegui ler %s", self._store)
+        return {}
+
+    def _save_count(self, key: str, count: int) -> None:
+        if not self._store or self._counts.get(key) == count:
+            return
+        self._counts[key] = count
+        try:
+            self._store.write_text(json.dumps(self._counts, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            log.warning("não consegui salvar a contagem do Gremory Case")
+
+    def _check_shop(self, st: _SlotState, img: np.ndarray, slot: int, is_shop: bool,
+                    key: str) -> list[PanelEvent]:
         hit = st.hits["loja"]
         tab = P.shop_selected_tab(img, hit)
         if tab is not None and tab != P.SHOP_PERSONAL_TAB:
             st.shop_pending = None
-            if not st.shop_tab_warned:
+            if is_shop and not st.shop_tab_warned:  # personagem de caça olhando outra aba: não é problema
                 st.shop_tab_warned = True
                 return [PanelEvent("aba", "loja", "o Gremory Case está aberto em outra aba: selecione "
                                                   "Personal Shop para eu ver as vendas")]
@@ -188,9 +218,18 @@ class PanelService:
         if counter is None:  # algo por cima do contador (dica de item, menu): tenta na próxima
             return []
         count, cap = counter
-        if st.shop_base is None or count < st.shop_base:
-            st.shop_base = count  # primeira leitura, ou o usuário retirou itens
-            st.shop_pending = None
+        last_sale = (self._shop_pub.get(slot) or (0, 0, None))[2]
+        self._shop_pub[slot] = (count, cap, last_sale)
+        if st.shop_base is None:
+            st.shop_base, st.shop_pending = count, None
+            before = self._counts.get(key)
+            self._save_count(key, count)
+            if before is not None and count > before:  # vendeu com o MU Sentinel fechado
+                return [self._sale(slot, before, count, cap, img, hit, " enquanto o MU Sentinel estava fechado")]
+            return []
+        if count < st.shop_base:  # o usuário retirou itens: nova base, sem aviso
+            st.shop_base, st.shop_pending = count, None
+            self._save_count(key, count)
             return []
         if count == st.shop_base:
             st.shop_pending = None
@@ -200,10 +239,16 @@ class PanelService:
         if n < SHOP_CONFIRM:
             return []
         old, st.shop_base, st.shop_pending = st.shop_base, count, None
+        self._save_count(key, count)
+        return [self._sale(slot, old, count, cap, img, hit)]
+
+    def _sale(self, slot: int, old: int, count: int, cap: int, img: np.ndarray, hit: P.PanelHit,
+              when: str = "") -> PanelEvent:
+        self._shop_pub[slot] = (count, cap, self._clock())
         diff = count - old
-        detail = (f"Gremory Case (Personal Shop): {old} → {count} de {cap} "
+        detail = (f"item novo no Gremory Case (Personal Shop){when}: {old} → {count} de {cap} "
                   f"({'+1 item' if diff == 1 else f'+{diff} itens'}). Confira o que foi vendido.")
-        return [PanelEvent("venda", "loja", detail, jpeg(P.crop(img, hit)))]
+        return PanelEvent("venda", "loja", detail, jpeg(P.crop(img, hit)))
 
     # ------------------------------------------------------------------ pedido do usuário
     def report(self, slot: int, img: np.ndarray, kind: str) -> P.PanelReading | None:

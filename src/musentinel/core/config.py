@@ -172,6 +172,7 @@ class SlotConfig(_Model):
 class Config(_Model):
     schema_version: int = Field(SCHEMA_VERSION, alias="versao")
     wizard_done: bool = Field(False, alias="assistente_concluido")
+    last_seen_version: str = Field("", alias="novidades_vistas_ate")  # mostra as novidades uma vez por versão
     level: int = Field(0, alias="nivel", ge=0, le=4)
     cities: list[str] = Field(default_factory=lambda: list(DEFAULT_CITIES), alias="cidades")
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "musentinel"
-version = "0.1.0"
-description = "Monitor de janelas do MU Online com alertas pelo WhatsApp"
+dynamic = ["version"]
+description = "Monitor de janelas do MU Online com alertas no celular"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy",
@@ -26,6 +26,9 @@ dev = ["pytest"]
 
 [project.scripts]
 musentinel = "musentinel.main:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "musentinel._version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
