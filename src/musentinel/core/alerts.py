@@ -4,6 +4,7 @@
   manda um LEMBRETE a cada N min (sem repetir o print) até o "ok" ou até o limite.
 - Aviso: uma vez.
 - Intervalo mínimo (cooldown): mesmo alerta do mesmo slot no máximo 1× a cada 5 min.
+- Instável: o mesmo crítico 3× em 30 min avisa que está instável e os próximos ficam só no app por 30 min.
 - Agrupamento: alertas do mesmo ciclo saem numa mensagem só.
 - Horário silencioso (só para canais externos), com opção de deixar críticos passarem.
 - Pausa: suspende os envios até retomar (ou até o fim do tempo pedido).
@@ -14,6 +15,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -23,6 +25,9 @@ log = logging.getLogger(__name__)
 
 SEV_LABEL = {"critico": "CRÍTICO", "aviso": "AVISO", "info": "OK"}
 SEV_ORDER = {"info": 0, "aviso": 1, "critico": 2}
+FLAP_COUNT = 3  # o mesmo crítico 3 vezes...
+FLAP_WINDOW_S = 1800  # ...em 30 min = instável
+FLAP_MUTE_S = 1800  # depois disso, 30 min só no app (sem mensagem no celular)
 
 
 @dataclass
@@ -89,6 +94,8 @@ class AlertManager:
         self._lock = threading.RLock()
         self._pending: list[Alert] = []
         self._last_by_key: dict[tuple, float] = {}
+        self._history: dict[tuple, deque[float]] = {}  # quando cada crítico saiu (para ver se está instável)
+        self._muted_until: dict[tuple, float] = {}
         self.active: dict[tuple, Alert] = {}  # críticos aguardando "ok"
         self.paused_until: float | None = None  # float('inf') = até retomar
 
@@ -98,20 +105,36 @@ class AlertManager:
             self.notifiers = list(notifiers)
 
     def submit(self, alert: Alert) -> bool:
-        """Entra na fila do ciclo. False = descartado pelo intervalo mínimo."""
+        """Entra na fila do ciclo. False = descartado (intervalo mínimo, ou instável e silenciado)."""
         with self._lock:
             now = self.clock()
             alert.ts = alert.first_ts = now
-            last = self._last_by_key.get(alert.key)
-            if alert.severity != "info" and last is not None and now - last < self.cfg.alerts.cooldown_min * 60:
-                log.info("alerta %s do slot %s ignorado (intervalo mínimo)", alert.kind, alert.slot)
-                return False
             if alert.severity != "info":
+                last = self._last_by_key.get(alert.key)
+                if last is not None and now - last < self.cfg.alerts.cooldown_min * 60:
+                    log.info("alerta %s do slot %s ignorado (intervalo mínimo)", alert.kind, alert.slot)
+                    return False
+                if now < self._muted_until.get(alert.key, 0):
+                    log.info("alerta %s do slot %s só no app (instável, silenciado)", alert.kind, alert.slot)
+                    return False
                 self._last_by_key[alert.key] = now
-            self._pending.append(alert)
             if alert.severity == "critico":
+                self._check_flapping(alert, now)
                 self.active[alert.key] = alert
+            self._pending.append(alert)
             return True
+
+    def _check_flapping(self, alert: Alert, now: float) -> None:
+        hist = self._history.setdefault(alert.key, deque())
+        while hist and now - hist[0] > FLAP_WINDOW_S:
+            hist.popleft()
+        hist.append(now)
+        if len(hist) >= FLAP_COUNT:
+            hist.clear()
+            self._muted_until[alert.key] = now + FLAP_MUTE_S
+            note = (f"aconteceu {FLAP_COUNT} vezes em {FLAP_WINDOW_S // 60} min (instável): nos próximos "
+                    f"{FLAP_MUTE_S // 60} min, se repetir, aparece só no app")
+            alert.detail = f"{alert.detail} · {note}" if alert.detail else note
 
     def resolve(self, slot: int | None, kinds: set[str] | None = None) -> list[Alert]:
         """O problema passou: para de repetir. Retorna os críticos que estavam ativos."""

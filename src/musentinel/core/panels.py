@@ -227,19 +227,19 @@ class PanelService:
             if before is not None and count > before:  # vendeu com o MU Sentinel fechado
                 return [self._sale(slot, before, count, cap, img, hit, " enquanto o MU Sentinel estava fechado")]
             return []
-        if count < st.shop_base:  # o usuário retirou itens: nova base, sem aviso
-            st.shop_base, st.shop_pending = count, None
-            self._save_count(key, count)
-            return []
         if count == st.shop_base:
             st.shop_pending = None
             return []
+        # subiu ou desceu: só vale lido igual SHOP_CONFIRM vezes (um "1" lido como "0" e depois certo
+        # não pode virar venda)
         n = st.shop_pending[1] + 1 if st.shop_pending and st.shop_pending[0] == count else 1
         st.shop_pending = (count, n)
         if n < SHOP_CONFIRM:
             return []
         old, st.shop_base, st.shop_pending = st.shop_base, count, None
         self._save_count(key, count)
+        if count < old:  # o usuário retirou itens: nova base, sem aviso
+            return []
         return [self._sale(slot, old, count, cap, img, hit)]
 
     def _sale(self, slot: int, old: int, count: int, cap: int, img: np.ndarray, hit: P.PanelHit,

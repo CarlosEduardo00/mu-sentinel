@@ -215,7 +215,7 @@ def test_shop_without_gremory_warns(service, imgs):
 
 
 def test_shop_sale_needs_two_reads_and_ignores_withdrawals(service, imgs, monkeypatch):
-    seq = iter([0, 0, 1, 1, 1, None, 0, 2, 2])  # None = algo por cima do contador
+    seq = iter([0, 0, 1, 1, 1, None, 0, 0, 2, 2])  # None = algo por cima do contador
 
     def fake_counter(img, hit, ocr):
         v = next(seq)
@@ -224,12 +224,21 @@ def test_shop_sale_needs_two_reads_and_ignores_withdrawals(service, imgs, monkey
     monkeypatch.setattr(panels_mod.P, "read_shop_counter", fake_counter)
     monkeypatch.setattr(panels_mod.P, "same_image", lambda a, b, tol=4.0: False)  # o contador "mudou" sempre
     got = []
-    for _ in range(9):
+    for _ in range(10):
         got.append([e for e in _check(service, imgs["loja_gremory"], 1, is_shop=True) if e.kind == "venda"])
     sales = [i for i, ev in enumerate(got) if ev]
-    assert sales == [3, 8]  # 0→1 confirmado na 2ª leitura; retirada (→0) não avisa; 0→2 de novo
+    assert sales == [3, 9]  # 0→1 confirmado na 2ª leitura; retirada (→0) não avisa; 0→2 de novo
     assert "0 → 1 de 150" in got[3][0].detail and got[3][0].image[:2] == b"\xff\xd8"
-    assert "+2 itens" in got[8][0].detail
+    assert "+2 itens" in got[9][0].detail
+
+
+def test_shop_counter_misread_down_is_not_a_sale(service, imgs, monkeypatch):
+    seq = iter([1, 1, 0, 1, 1, 1])  # um "1" lido como "0" uma vez
+
+    monkeypatch.setattr(panels_mod.P, "read_shop_counter", lambda img, hit, ocr: (next(seq), 150))
+    monkeypatch.setattr(panels_mod.P, "same_image", lambda a, b, tol=4.0: False)
+    sales = [e for _ in range(6) for e in _check(service, imgs["loja_gremory"], 1, is_shop=True) if e.kind == "venda"]
+    assert sales == []
 
 
 def test_gremory_sale_in_any_window_and_while_app_closed(scanned, imgs, ocr, monkeypatch, tmp_path):

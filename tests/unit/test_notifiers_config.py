@@ -7,7 +7,7 @@ import pytest
 
 from musentinel.core.config import Config, WhatsAppRecipient, mask_phone
 from musentinel.core.discovery import Discovery
-from musentinel.core.health import ConnectionTracker, FrameWatcher
+from musentinel.core.health import ConnectionTracker
 from musentinel.core.logsetup import ScrubFilter, scrub
 from musentinel.core.notifiers.callmebot import CallMeBotNotifier, build_url, classify
 from musentinel.core.winapi import WindowInfo
@@ -174,6 +174,15 @@ def test_config_newer_version_rejected():
         Config.from_yaml("versao: 99\n")
 
 
+def test_config_v1_migrates_frozen_and_hung():
+    old = "versao: 1\nlimiares:\n  janela_sem_responder_s: 10\n  quadro_congelado_s: 30\n"
+    c = Config.from_yaml(old)
+    assert c.schema_version == 2 and c.thresholds.hung_s == 30
+    assert "quadro_congelado_s" not in c.to_yaml()
+    custom = Config.from_yaml("versao: 1\nlimiares:\n  janela_sem_responder_s: 45\n")
+    assert custom.thresholds.hung_s == 45  # valor escolhido pelo usuário fica
+
+
 def test_config_save_load(tmp_path):
     p = tmp_path / "config.yaml"
     c = Config()
@@ -241,16 +250,18 @@ def test_connection_tracker():
     assert t.reference == new
 
 
-def test_frame_watcher():
-    import numpy as np
-
-    fw = FrameWatcher()
-    a = np.zeros((96, 128, 3), np.uint8)
-    b = a.copy()
-    b[:40] = 200
-    assert fw.update(a, 0) == 0
-    assert fw.update(a, 10) == 10
-    assert fw.update(b, 12) == 0
+def test_connection_tracker_server_switch_is_not_disconnect():
+    t = ConnectionTracker()
+    srv = {("139.5.226.144", 55905)}
+    t.update(srv, True, now=0)
+    select = {("139.5.226.140", 44405)}  # tela de seleção de servidor: conexão nova, sem HUD
+    assert t.update(select, False, now=2) is None
+    assert t.update(select, False, now=60) is None
+    other = {("139.5.226.146", 55903)}
+    assert t.update(other, True, now=70) is True  # entrou no servidor novo
+    assert t.update(select, False, now=100) is None
+    assert t.update(select, False, now=200) is False  # 90 s sem o jogo voltar: caiu mesmo
+    assert t.update(set(), False, now=202) is False
 
 
 def test_discovery_remembered_slots_do_not_block_numbers(tmp_path):

@@ -327,16 +327,14 @@ class SettingsDialog(QDialog):
         self.t_hp0 = _spin(t.death_hp_reads, 1, 10)
         self.t_exp = _spin(t.exp_stall_min, 0.5, 120, 0.5, 1, " min")
         self.t_helper = _spin(t.helper_stall_s, 5, 600, 5, 0, " s")
-        self.t_hung = _spin(t.hung_s, 2, 300, 1, 0, " s")
-        self.t_frozen = _spin(t.frozen_s, 5, 600, 5, 0, " s")
+        self.t_hung = _spin(t.hung_s, 5, 300, 5, 0, " s")
         self.t_unread = _spin(t.unreadable_warn_min, 0.5, 60, 0.5, 1, " min")
         self.t_city = _spin(t.city_grace_s, 0, 600, 5, 0, " s")
         f.addRow("Aviso de HP baixo abaixo de:", self.t_hp)
         f.addRow("Leituras de HP 0 para morte:", self.t_hp0)
         f.addRow("Caça parada (sem EXP) após:", self.t_exp)
         f.addRow("Helper parado (Hunting Time) após:", self.t_helper)
-        f.addRow("Janela sem responder por:", self.t_hung)
-        f.addRow("Imagem congelada por:", self.t_frozen)
+        f.addRow('Janela travada ("Não respondendo") por:', self.t_hung)
         f.addRow("Avisar HUD ilegível após:", self.t_unread)
         f.addRow("Ida à cidade conta como manual se você\nmexeu no PC nos últimos:", self.t_city)
         return w
@@ -417,7 +415,7 @@ class SettingsDialog(QDialog):
             t = c.thresholds
             t.hp_low_pct, t.death_hp_reads = self.t_hp.value(), self.t_hp0.value()
             t.exp_stall_min, t.helper_stall_s = self.t_exp.value(), self.t_helper.value()
-            t.hung_s, t.frozen_s = self.t_hung.value(), self.t_frozen.value()
+            t.hung_s = self.t_hung.value()
             t.unreadable_warn_min, t.city_grace_s = self.t_unread.value(), self.t_city.value()
             a = c.alerts
             a.repeat_critical = self.a_remind.isChecked()

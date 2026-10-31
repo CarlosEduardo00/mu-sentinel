@@ -3,7 +3,6 @@
 - processo vivo (psutil)
 - janela respondendo (IsHungAppWindow + SendMessageTimeout(WM_NULL))
 - conexão TCP do processo com o servidor (tabela de conexões do Windows)
-- quadro mudou (comparação de miniaturas)
 - internet (abre uma conexão TCP com DNS públicos)
 """
 
@@ -16,8 +15,6 @@ import threading
 import time
 from collections import defaultdict
 
-import cv2
-import numpy as np
 import psutil
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -25,10 +22,6 @@ user32.SendMessageTimeoutW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM, w
                                        ctypes.POINTER(ctypes.c_size_t)]
 user32.SendMessageTimeoutW.restype = ctypes.c_size_t
 user32.IsHungAppWindow.argtypes = [wt.HWND]
-user32.OpenInputDesktop.restype = wt.HANDLE
-user32.GetUserObjectInformationW.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD,
-                                             ctypes.POINTER(wt.DWORD)]
-user32.CloseDesktop.argtypes = [wt.HANDLE]
 
 WM_NULL = 0x0000
 SMTO_ABORTIFHUNG = 0x0002
@@ -78,59 +71,50 @@ def tcp_by_pid() -> dict[int, set[tuple[str, int]]]:
     return out
 
 
+SWITCH_GRACE_S = 90.0  # troca de servidor/canal: tempo para o HUD voltar antes de contar como queda
+
+
 class ConnectionTracker:
     """Guarda as conexões do client enquanto ele está claramente online (referência).
 
-    Desconectado = nenhuma conexão de referência e nenhuma conexão nova enquanto há
-    sinal de jogo online. Antes de existir referência o resultado é desconhecido (None).
+    - conexão de referência existe: conectado;
+    - nenhuma conexão: desconectado;
+    - só uma conexão nova, sem o HUD na tela: trocando de servidor/canal (tela de seleção).
+      Fica desconhecido (None) por até SWITCH_GRACE_S; se o jogo não voltar, desconectado.
+    Antes de existir referência o resultado é desconhecido (None).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, switch_grace_s: float = SWITCH_GRACE_S) -> None:
+        self.switch_grace_s = switch_grace_s
         self.reference: set[tuple[str, int]] = set()
+        self._other_since: float | None = None
 
     def reset(self) -> None:
         self.reference = set()
+        self._other_since = None
 
-    def update(self, conns: set[tuple[str, int]], online_evidence: bool) -> bool | None:
+    def update(self, conns: set[tuple[str, int]], online_evidence: bool, now: float | None = None) -> bool | None:
+        now = time.time() if now is None else now
         if not self.reference:
             if conns and online_evidence:
                 self.reference = set(conns)
                 return True
             return None
         if conns & self.reference:
+            self._other_since = None
             if online_evidence:
                 self.reference |= conns
             return True
         if conns and online_evidence:
             # trocou de servidor/canal: adota a nova conexão como referência
             self.reference = set(conns)
+            self._other_since = None
             return True
+        if conns:
+            self._other_since = self._other_since or now
+            return None if now - self._other_since < self.switch_grace_s else False
+        self._other_since = None
         return False
-
-
-class FrameWatcher:
-    """Detecta render congelado: miniatura idêntica por muito tempo."""
-
-    def __init__(self, diff_min: float = 0.25) -> None:
-        self.diff_min = diff_min
-        self._last: np.ndarray | None = None
-        self.last_change = 0.0
-
-    @staticmethod
-    def signature(img: np.ndarray) -> np.ndarray:
-        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
-        return cv2.resize(g, (96, 72), interpolation=cv2.INTER_AREA).astype(np.float32)
-
-    def update(self, img: np.ndarray, now: float) -> float:
-        """Retorna há quantos segundos o quadro não muda."""
-        sig = self.signature(img)
-        if self._last is None or float(np.abs(sig - self._last).mean()) >= self.diff_min:
-            self.last_change = now
-        self._last = sig
-        return now - self.last_change
-
-    def reset(self) -> None:
-        self._last = None
 
 
 def internet_ok(timeout: float = 2.0) -> bool:
@@ -173,21 +157,6 @@ class InternetProbe:
         while not self._stop.is_set():
             self.check_now()
             self._stop.wait(self.every_s)
-
-
-def session_locked() -> bool:
-    """Tela bloqueada (Win+L) ou outra área de trabalho segura ativa."""
-    h = user32.OpenInputDesktop(0, False, 0x0001)  # DESKTOP_READOBJECTS
-    if not h:
-        return True
-    try:
-        buf = ctypes.create_unicode_buffer(256)
-        n = wt.DWORD()
-        if user32.GetUserObjectInformationW(h, 2, buf, ctypes.sizeof(buf), ctypes.byref(n)):  # UOI_NAME
-            return buf.value.lower() != "default"
-        return False
-    finally:
-        user32.CloseDesktop(h)
 
 
 class _LASTINPUTINFO(ctypes.Structure):

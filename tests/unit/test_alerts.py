@@ -89,6 +89,33 @@ def test_cooldown_same_alert_same_slot():
     assert len(ext.sent) == 2
 
 
+def test_flapping_critical_goes_quiet_after_3_in_30_min():
+    m, clk, ext, local = make()
+    for i in range(3):
+        assert m.submit(crit(kind="TRAVADO"))
+        m.flush()
+        m.resolve(1)
+        clk.advance(6)
+    assert "instável" in ext.sent[2] and "instável" not in ext.sent[1]
+    assert not m.submit(crit(kind="TRAVADO"))  # 4ª vez dentro dos 30 min: só no app
+    assert m.submit(crit(kind="MORTO"))  # outro tipo de alerta continua chegando
+    m.flush()
+    clk.advance(30)
+    assert m.submit(crit(kind="TRAVADO"))  # passou o silêncio: volta a avisar
+    m.flush()
+    assert len(ext.sent) == 5 and len(local.sent) == 5
+
+
+def test_spread_out_criticals_are_not_flapping():
+    m, clk, ext, _ = make()
+    for _ in range(4):
+        assert m.submit(crit())
+        m.flush()
+        m.resolve(1)
+        clk.advance(20)  # uma vez a cada 20 min: só 2 dentro de qualquer janela de 30 min
+    assert not any("instável" in s for s in ext.sent)
+
+
 def test_cooldown_is_per_slot():
     m, clk, ext, _ = make()
     assert m.submit(crit(1))

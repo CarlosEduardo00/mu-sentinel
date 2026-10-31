@@ -142,20 +142,76 @@ def test_process_closed():
     assert s.kinds() == ["FECHADO"]
 
 
-def test_hung_window_needs_10s():
+def test_hung_window_needs_30s():
     s = hunting()
-    s.step(3, gain=False, hung=True)  # 6 s
+    s.step(14, gain=False, hung=True)  # 28 s "Não respondendo" (carregando mapa, PC lento)
     assert s.state == State.CACANDO
-    s.step(5, gain=False, hung=True)
+    s.step(4, gain=False, hung=True)
     assert s.state == State.TRAVADO
+    assert "Não respondendo" in next(x for x in s.signals if x.kind == "TRAVADO").detail
 
 
-def test_frozen_frame_but_not_when_locked():
+def test_short_hang_does_not_alert():
     s = hunting()
-    s.step(3, gain=False, frame_static_s=40, locked=True)
-    assert s.state != State.TRAVADO
-    s.step(3, gain=False, frame_static_s=40)
-    assert s.state == State.TRAVADO
+    for _ in range(5):  # trava 20 s, volta, trava de novo: nunca 30 s seguidos
+        s.step(10, hung=True)
+        s.step(2)
+    assert s.kinds() == []
+
+
+def test_still_image_is_not_frozen():
+    """Personagem parado na cidade (ou a Loja): a imagem não muda e está tudo normal."""
+    cfg = Config()
+    cfg.slot(1).name = "Loja"
+    s = Sim(cfg)
+    s.step(600, gain=False, map="Elbeland", hunting_time=None)  # 20 min com a mesma imagem
+    assert s.state == State.ONLINE
+    assert s.kinds() == []
+
+
+def test_hp_misread_with_other_max_is_not_death():
+    s = hunting()
+    s.step(4, hp=(0, 81))  # "0/81" no lugar de "800/811": erro de leitura
+    s.step(3)
+    assert "MORTO" not in s.kinds()
+    assert s.state == State.CACANDO
+
+
+def test_shop_hp_zero_misread_never_latches_death():
+    cfg = Config()
+    cfg.slot(1).name = "Loja"
+    s = Sim(cfg)
+    s.step(5, gain=False, hp=(500, 500), map="Elbeland")
+    s.step(5, gain=False, hp=(0, 500), map="Elbeland")  # na cidade não se morre: leitura errada
+    s.step(5, gain=False, hp=(500, 500), map="Elbeland")
+    assert s.state == State.ONLINE
+    assert s.kinds() == []
+
+
+def test_hunting_time_misread_does_not_fake_helper_stop():
+    s = hunting()
+    s.step(1, hunting_time=s.ht + 3600)  # um dígito errado: +1 h de repente
+    s.step(30)  # segue caçando normalmente
+    s.step(1, hunting_time=5)  # leitura errada para menos
+    s.step(30)
+    assert "HELPER" not in s.kinds()
+
+
+def test_helper_restart_counts_as_running():
+    s = hunting()
+    s.ht = 0  # Helper desligado e ligado de novo: o Hunting Time recomeça do zero
+    s.step(30)
+    assert "HELPER" not in s.kinds()
+    assert s.state == State.CACANDO
+
+
+def test_helper_warning_waits_for_user_to_leave():
+    s = hunting()
+    s.step(25, gain=False, user_active=True)  # você pausou o Helper e está no PC
+    assert "HELPER" not in s.kinds()
+    s.step(2, gain=False)  # saiu do PC e continua parado
+    assert s.kinds().count("HELPER") == 1
+    assert "parado há" in s.signals[-1].detail
 
 
 def test_exp_stall_becomes_parado_with_warning():
@@ -180,14 +236,25 @@ def test_helper_stopped_warning_once():
     assert s.kinds().count("HELPER") == 1
 
 
-def test_hp_low_warning_once_and_rearms():
+def test_hp_low_warning_at_most_every_15_min():
     s = hunting()
     s.step(3, hp=(200, 811))
     s.step(3, hp=(150, 811))
     assert s.kinds().count("HP_BAIXO") == 1
     s.step(3, hp=(811, 811))
+    s.step(3, hp=(100, 811))  # caiu de novo 20 s depois: segura (o HP sobe e desce na caça)
+    assert s.kinds().count("HP_BAIXO") == 1
+    s.step(450)  # 15 min
     s.step(3, hp=(100, 811))
     assert s.kinds().count("HP_BAIXO") == 2
+
+
+def test_unreadable_warning_waits_for_user_to_leave():
+    s = hunting()
+    s.step(90, gain=False, hp=None, exp=None, map=None, coords=None, hunting_time=None, user_active=True)
+    assert s.kinds() == []  # você abriu um menu e está mexendo: sem aviso
+    s.step(2, gain=False, hp=None, exp=None, map=None, coords=None, hunting_time=None)
+    assert s.kinds() == ["ILEGIVEL"]
 
 
 def test_idle_in_town_from_start_never_alerts_parado():

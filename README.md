@@ -107,19 +107,26 @@ As chaves ficam no Gerenciador de Credenciais do Windows (nunca no `config.yaml`
 | CAÇANDO | EXP ou Hunting Time subindo | — |
 | ONLINE | HUD legível, ainda sem sinal de caça | — |
 | PARADO | sem EXP há 5 min (vindo de CAÇANDO) | aviso, 1 vez |
-| MORTO | HP 0 em 2 leituras, ou foi do spot para uma cidade sem você mexer no PC | **crítico** |
-| DESCONECTADO | a conexão do jogo com o servidor fechou, ou a internet do PC caiu | **crítico** |
-| TRAVADO | janela sem responder por 10 s ou imagem parada por 30 s | **crítico** |
+| MORTO | HP 0 em 2 leituras (com o HP máximo de sempre), ou foi do spot para uma cidade sem você mexer no PC | **crítico** |
+| DESCONECTADO | a conexão do jogo com o servidor fechou, ou a internet do PC caiu (trocar de servidor não conta: espera até 90 s o jogo voltar) | **crítico** |
+| TRAVADO | o Windows marcou a janela como "Não respondendo" por 30 s (imagem parada **não** conta) | **crítico** |
 | FECHADO | o processo do jogo sumiu | **crítico** |
-| ILEGÍVEL | menu/loading/janela por cima do HUD | aviso só após 2 min, **nunca** crítico |
+| ILEGÍVEL | menu/loading/janela por cima do HUD | aviso só após 2 min com você longe do PC, **nunca** crítico |
 
-Também avisa: Helper parou (Hunting Time parado), HP abaixo de 30%.
+Também avisa: Helper parou (Hunting Time parado; com você mexendo no PC, espera você sair), HP abaixo de
+30% (no máximo 1 a cada 15 min). A Loja não tem alerta de morte, caça parada, Helper nem HP baixo (fica
+parada na cidade de propósito); desconexão, travamento e fechamento valem para ela também.
 
 - Um estado novo só vale após 2 ciclos seguidos iguais (ciclo de 2 s).
+- Leituras erradas do HUD não viram alerta: HP com máximo diferente do de sempre, Hunting Time que pula
+  mais do que o tempo que passou e contador do Gremory que cai uma vez só são ignorados.
 - Uma mensagem por acontecimento (e outra quando resolve). Lembrete opcional (`alertas.lembrete_critico`):
   "LEMBRETE: X continua" a cada 5 min, sem repetir o print, até o `/ok` (Telegram) ou **OK, vi o alerta**;
   no máximo 3 se só houver CallMeBot.
 - Mesmo alerta do mesmo slot: no máximo 1× a cada 5 min. Vários alertas no mesmo ciclo saem numa mensagem só.
+- O mesmo alerta crítico 3× em 30 min: a 3ª mensagem diz que está instável e, nos 30 min seguintes, ele
+  aparece só no app.
+- Erro interno: cada erro diferente vai ao celular uma vez só (o resto fica no log).
 - 2+ slots desconectados juntos (ou internet fora): **um** alerta só, dizendo se a internet deste PC caiu.
 - Horário silencioso (opcional) vale só para o WhatsApp; críticos passam por padrão.
 - Morte "trava": renascer na cidade continua MORTO até voltar a ganhar EXP ou sair da cidade.

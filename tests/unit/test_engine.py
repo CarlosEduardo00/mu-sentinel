@@ -77,7 +77,6 @@ def rig(monkeypatch):
         monkeypatch.setattr(health, "tcp_by_pid", lambda: {1000 + i: {SRV} for i, c in game.conn.items() if c})
         monkeypatch.setattr(health, "process_alive", lambda pid, name=None: game.alive.get(pid - 1000, False))
         monkeypatch.setattr(health, "window_hung", lambda hwnd: False)
-        monkeypatch.setattr(health, "session_locked", lambda: False)
         monkeypatch.setattr(health, "user_idle_s", lambda: 9999)
         monkeypatch.setattr(health, "internet_ok", lambda timeout=2.0: True)
         monkeypatch.setattr(engine_mod.winapi, "is_window", lambda hwnd: game.alive.get(hwnd, False))

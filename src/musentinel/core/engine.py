@@ -74,7 +74,6 @@ class _Slot:
     def __init__(self, n: int, cfg: Config) -> None:
         self.n = n
         self.tracker = SlotTracker(n, cfg)
-        self.frames = health.FrameWatcher()
         self.conn = health.ConnectionTracker()
         self.pid: int | None = None
         self.hwnd: int | None = None
@@ -122,6 +121,7 @@ class Engine:
         self.elevated_game = False
         self._awake: tuple[bool, bool] | None = None
         self._read_errors: set[tuple[str, str]] = set()
+        self._errors_alerted: set[str] = set()
         self.protection_blocked = 0  # janelas do jogo escondidas pelo anti-cheat
 
     # ------------------------------------------------------------------ ciclo de vida
@@ -161,10 +161,14 @@ class Engine:
                     self.cycle()
                 except Exception as exc:  # o monitor nunca morre por um erro de ciclo
                     log.exception("erro no ciclo do monitor")
-                    self.bus.emit("erro", f"erro interno no monitor: {type(exc).__name__}: {exc}", severity="aviso")
-                    self.alerts.submit(Alert(None, "ERRO", "aviso", "ERRO INTERNO",
-                                             detail=f"{type(exc).__name__} (detalhes no log)"))
-                    self.alerts.flush()
+                    what = f"{type(exc).__name__}: {exc}"[:160]
+                    self.bus.emit("erro", f"erro interno no monitor: {what}", severity="aviso")
+                    if what not in self._errors_alerted:  # cada erro diferente vai ao celular 1 vez só
+                        self._errors_alerted.add(what)
+                        self.alerts.submit(Alert(None, "ERRO", "aviso", "ERRO INTERNO",
+                                                 detail=f"{type(exc).__name__} (detalhes no log; o monitor "
+                                                        "continua e não avisa de novo este mesmo erro)"))
+                        self.alerts.flush()
                 self.last_cycle = time.time()
                 self.cycle_ms = (self.last_cycle - t0) * 1000
                 self._cycles += 1
@@ -312,7 +316,6 @@ class Engine:
                 self.bus.emit("info", msg, severity="aviso")
             self._check_protection(self.discovery.hidden)
             conns = health.tcp_by_pid()
-            locked = health.session_locked()
             user_active = health.user_idle_s() < cfg.thresholds.city_grace_s
             internet_down = self.internet.ok is False
 
@@ -327,7 +330,7 @@ class Engine:
                     s = self.slots[n] = _Slot(n, cfg)
                     cfg.slot(n)
                     self.bus.emit("info", f"janela encontrada (PID {b.pid})", slot=n)
-                obs = self._observe(s, b, now, conns, locked, user_active, internet_down)
+                obs = self._observe(s, b, now, conns, user_active, internet_down)
                 before = s.tracker.view.state
                 signals = s.tracker.update(obs)
                 after = s.tracker.view.state
@@ -354,7 +357,7 @@ class Engine:
             self.alerts.flush()
             self.bus.publish("snapshots", self.snapshots())
 
-    def _observe(self, s: _Slot, b, now, conns, locked, user_active, internet_down) -> Observation:
+    def _observe(self, s: _Slot, b, now, conns, user_active, internet_down) -> Observation:
         if b is None:
             if s.pid == 0:
                 # dono desconhecido: só dá para saber se a janela ainda existe
@@ -376,7 +379,6 @@ class Engine:
                               slot=s.n)
             s.tracker.reset_process()
             s.conn.reset()
-            s.frames.reset()
             s.pid, s.hwnd = b.pid, b.hwnd
         if b.info is not None and b.info.elevated and not winapi.current_process_elevated():
             self.elevated_game = True
@@ -385,12 +387,11 @@ class Engine:
         else:
             alive = winapi.is_window(b.hwnd)  # modo limitado: a janela existir é o que dá para checar
         hung = health.window_hung(b.hwnd) if alive else False
-        o = Observation(ts=now, process_alive=alive, hung=hung, locked=locked, user_active=user_active)
+        o = Observation(ts=now, process_alive=alive, hung=hung, user_active=user_active)
         try:
             frame = self._capture.grab(b.hwnd)
         except WindowMinimizedError:
             o.capture_ok, o.note = False, "janela minimizada (minimizada não renderiza)"
-            s.frames.reset()
             frame = None
         except WindowGoneError:
             o.capture_ok, o.note = False, "janela sumiu"
@@ -402,7 +403,6 @@ class Engine:
             img = frame.image
             s.frame = img
             s.size = frame.size
-            o.frame_static_s = s.frames.update(img, now)
             h, w = img.shape[:2]
             s.thumb = cv2.resize(img, (THUMB_W, int(h * THUMB_W / w)), interpolation=cv2.INTER_AREA)
             reader = self._reader_for(frame.size)

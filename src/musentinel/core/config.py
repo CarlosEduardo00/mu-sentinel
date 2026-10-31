@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import paths
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RISK_TEXT = ("A política operacional da Webzen proíbe macros e programas não oficiais e prevê banimento "
              "permanente, inclusive de todas as contas ligadas à mesma pessoa. Os níveis 1 a 4 enviam teclas "
              "ao jogo. Use por sua conta e risco.")
@@ -158,8 +158,7 @@ class Thresholds(_Model):
     death_hp_reads: int = Field(2, alias="leituras_hp_zero", ge=1)
     exp_stall_min: float = Field(5, alias="exp_parada_min", gt=0)
     helper_stall_s: float = Field(30, alias="hunting_time_parado_s", gt=0)
-    hung_s: float = Field(10, alias="janela_sem_responder_s", gt=0)
-    frozen_s: float = Field(30, alias="quadro_congelado_s", gt=0)
+    hung_s: float = Field(30, alias="janela_sem_responder_s", gt=0)  # carregar mapa trava uns segundos
     unreadable_warn_min: float = Field(2, alias="ilegivel_aviso_min", gt=0)
     city_grace_s: float = Field(60, alias="cidade_sem_comando_s", ge=0)
 
@@ -236,7 +235,13 @@ def migrate(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"config.yaml é da versão {v}, mas este app entende até a {SCHEMA_VERSION}. Atualize o app."
         )
-    # (sem migrações ainda: versão 1 é a primeira)
+    if v < 2:
+        # 0.2.1: imagem parada deixou de ser "janela travada"; "sem responder" passou de 10 para 30 s
+        lim = data.get("limiares")
+        if isinstance(lim, dict):
+            lim.pop("quadro_congelado_s", None)
+            if lim.get("janela_sem_responder_s") == 10:  # só troca o padrão antigo, não um valor escolhido
+                lim["janela_sem_responder_s"] = 30
     data["versao"] = SCHEMA_VERSION
     return data
 

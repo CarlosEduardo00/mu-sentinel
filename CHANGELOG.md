@@ -1,5 +1,24 @@
 # Novidades do MU Sentinel
 
+## [0.2.1] - 2026-10-31
+
+### Correções
+- **Fim do falso "JANELA TRAVADA"**: imagem parada não conta mais (a Loja e personagens parados na
+  cidade disparavam o alerta à toa). Travada agora é só o Windows marcar o jogo como "Não respondendo"
+  por 30 s.
+- Trocar de servidor não gera mais "DESCONECTADO": o app espera até 90 s o jogo voltar.
+- Leitura errada do HP (ex.: "0/81" no lugar de "800/811") não vira mais morte nem HP baixo. A Loja não
+  tem mais alerta de morte nem de HP baixo (na cidade não se morre).
+- Leitura errada do Hunting Time não dispara mais "HELPER PAROU".
+- Contador do Gremory lido errado uma vez para menos não vira mais uma venda falsa.
+
+### Melhorias
+- Alerta que se repete 3 vezes em 30 min avisa que está **instável** e para de chegar no celular por 30 min
+  (continua aparecendo no app).
+- HP baixo: no máximo 1 aviso a cada 15 min.
+- "Helper parou" e "leitura ilegível" esperam você sair do PC (perto, foi você que pausou ou abriu o menu).
+- Erro interno vai ao celular uma vez só por tipo de erro.
+
 ## [0.2.0] - 2026-10-30
 
 ### Novo

@@ -6,7 +6,11 @@ confirmado e sinais (alertas candidatos). Sem Qt, sem Windows: testável sozinha
 Regras principais:
 - um estado novo só vale depois de N ciclos seguidos iguais (ciclos_confirmacao);
 - ILEGÍVEL nunca gera alerta crítico (menu aberto, janela coberta, loading);
-- morte "trava" (latch) até a caça voltar: renascer na cidade com HP cheio continua MORTO.
+- morte "trava" (latch) até a caça voltar: renascer na cidade com HP cheio continua MORTO;
+- TRAVADO é só o Windows dizer "Não respondendo": imagem parada não conta (a Loja e um
+  personagem parado na cidade ficam com a imagem igual e estão normais);
+- leitura de HP com máximo diferente do de sempre é erro de leitura (não conta para morte/HP baixo);
+- avisos que você mesmo causa no PC (Helper pausado, menu aberto) esperam você sair do PC.
 """
 
 from __future__ import annotations
@@ -29,7 +33,9 @@ class State(str, Enum):
     ILEGIVEL = "ILEGÍVEL"
 
 
-CRITICAL = {State.MORTO, State.DESCONECTADO, State.TRAVADO, State.FECHADO}
+HP_MAX_STABLE_READS = 3  # mesmo HP máximo em 3 leituras = o máximo de verdade do personagem
+HP_LOW_EVERY_S = 900  # HP baixo: no máximo 1 aviso a cada 15 min (o HP sobe e desce na caça)
+CRITICAL ={State.MORTO, State.DESCONECTADO, State.TRAVADO, State.FECHADO}
 ALERT_TITLE = {
     State.MORTO: "MORTE",
     State.DESCONECTADO: "DESCONECTADO",
@@ -42,13 +48,11 @@ ALERT_TITLE = {
 class Observation:
     ts: float
     process_alive: bool = True
-    hung: bool = False
-    frame_static_s: float = 0.0
+    hung: bool = False  # o Windows marcou a janela como "Não respondendo"
     capture_ok: bool = True
     capture_note: str = ""
-    connected: bool | None = None  # None = ainda sem referência
-    locked: bool = False  # tela bloqueada: render congelado não conta
-    user_active: bool = False  # usuário mexeu no PC há pouco (ida manual à cidade)
+    connected: bool | None = None  # None = desconhecido (sem referência, ou trocando de servidor)
+    user_active: bool = False  # usuário mexeu no PC há pouco (ida manual à cidade, menu, Helper pausado)
     hp: tuple[int, int] | None = None
     exp: tuple[int, int] | None = None
     coords: tuple[int, int] | None = None
@@ -136,12 +140,19 @@ class SlotTracker:
         self._last_exp: tuple[int, int] | None = None
         self._last_exp_rise: float | None = None
         self._last_ht: int | None = None
+        self._last_ht_ts: float | None = None
         self._last_ht_rise: float | None = None
         self._helper_warned = False
         self._helper_was_running = False
+        self._hp_max: int | None = None  # HP máximo confirmado (filtra leituras erradas)
+        self._hp_max_cand: int | None = None
+        self._hp_max_n = 0
         self._hp_low_n = 0
         self._hp_low_warned = False
+        self._hp_low_at: float | None = None
         self._last_map: str | None = None
+        self._ht_pending: tuple[int, float] | None = None
+        self._hp_now: tuple[int, int] | None = None  # HP deste ciclo, se a leitura é confiável
         self._rate = ExpRate()
 
     # ------------------------------------------------------------------
@@ -169,8 +180,8 @@ class SlotTracker:
             if self._candidate_n >= self.cfg.monitor.confirm_cycles:
                 signals += self._transition(raw, o)
 
-        # ILEGÍVEL prolongado: aviso (nunca crítico)
-        if self.view.state == State.ILEGIVEL:
+        # ILEGÍVEL prolongado: aviso (nunca crítico), só com você longe do PC (perto, foi você que abriu o menu)
+        if self.view.state == State.ILEGIVEL and not o.user_active:
             if self._unreadable_since and not self._unreadable_warned and \
                     o.ts - self._unreadable_since >= th.unreadable_warn_min * 60:
                 self._unreadable_warned = True
@@ -180,10 +191,42 @@ class SlotTracker:
         return signals
 
     # ------------------------------------------------------------------
+    def _hp_trusted(self, hp: tuple[int, int]) -> bool:
+        """HP com o máximo de sempre. '0/28' com máximo 208 é erro de leitura, não morte."""
+        cur, mx = hp
+        if cur > 0:  # o máximo muda com o personagem vivo (subiu de nível, buff); morto mostra 0/máximo de antes
+            if mx == self._hp_max_cand:
+                self._hp_max_n += 1
+            else:
+                self._hp_max_cand, self._hp_max_n = mx, 1
+            if self._hp_max_n >= HP_MAX_STABLE_READS:
+                self._hp_max = mx
+        return 0 <= cur <= mx and (self._hp_max is None or mx == self._hp_max)
+
+    def _track_ht(self, value: int, ts: float) -> None:
+        """Hunting Time: aceita só leituras que batem com o tempo que passou (um dígito lido errado
+        não pode fingir que o Helper parou ou andou)."""
+        def fits(base: int, base_ts: float) -> bool:
+            return base <= value <= base + (ts - base_ts) * 1.5 + 10
+
+        if self._last_ht is None or self._last_ht_ts is None or fits(self._last_ht, self._last_ht_ts):
+            if self._last_ht is not None and value > self._last_ht:
+                self._last_ht_rise = ts
+        elif self._ht_pending is not None and fits(*self._ht_pending):
+            # duas leituras seguidas concordam entre si: o Helper reiniciou (ou a anterior estava errada)
+            if value > self._ht_pending[0]:
+                self._last_ht_rise = ts
+        else:
+            self._ht_pending = (value, ts)  # fora do esperado: espera a próxima confirmar
+            return
+        self._last_ht, self._last_ht_ts, self._ht_pending = value, ts, None
+
     def _track_readings(self, o: Observation) -> None:
         v = self.view
-        if o.hp is not None:
-            v.hp = o.hp
+        shop = self.cfg.is_shop(self.slot)
+        self._hp_now = o.hp if o.hp is not None and self._hp_trusted(o.hp) else None
+        if self._hp_now is not None:
+            v.hp = self._hp_now
         if o.coords is not None:
             v.coords = o.coords
         if o.map is not None:
@@ -201,16 +244,15 @@ class SlotTracker:
         v.exp_per_h, v.exp_pct_per_h = self._rate.rate(o.ts)
 
         if o.hunting_time is not None:
-            if self._last_ht is not None and o.hunting_time > self._last_ht:
-                self._last_ht_rise = o.ts
-            self._last_ht = o.hunting_time
+            self._track_ht(o.hunting_time, o.ts)
 
-        # morte por HP 0
-        if o.hp is not None:
-            self._hp_zero = self._hp_zero + 1 if o.hp[0] == 0 else 0
+        # morte por HP 0 (a Loja fica na cidade, onde não se morre: HP 0 lá é erro de leitura)
+        hp = self._hp_now
+        if hp is not None and not shop:
+            self._hp_zero = self._hp_zero + 1 if hp[0] == 0 else 0
             if self._hp_zero >= self.cfg.thresholds.death_hp_reads:
                 if not self._dead:
-                    self._dead_reason = f"HP {o.hp[0]}/{o.hp[1]}"
+                    self._dead_reason = f"HP {hp[0]}/{hp[1]}"
                 self._dead = True
 
         # morte por ida à cidade vinda da caça, sem o usuário ter mexido
@@ -221,13 +263,13 @@ class SlotTracker:
             self._last_map = o.map
             if (prev is not None and o.map != prev and self.cfg.is_city(o.map)
                     and not self.cfg.is_city(prev) and self.view.state == State.CACANDO
-                    and not o.user_active and not self.cfg.is_shop(self.slot)):
+                    and not o.user_active and not shop):
                 if not self._dead:
                     self._dead_reason = f"foi de {prev} para {o.map} sem comando"
                 self._dead = True
 
         # morte só "destrava" com sinal claro de vida: EXP subiu agora, ou saiu da cidade
-        if self._dead and o.hp is not None and o.hp[0] > 0:
+        if self._dead and hp is not None and hp[0] > 0:
             if self._last_exp_rise == o.ts and o.exp is not None:
                 self._dead = False
             elif left_city:
@@ -248,9 +290,7 @@ class SlotTracker:
         else:
             self._hung_since = None
         if self._hung_since is not None and o.ts - self._hung_since >= th.hung_s:
-            return State.TRAVADO
-        if o.capture_ok and not o.locked and o.frame_static_s >= th.frozen_s:
-            return State.TRAVADO
+            return State.TRAVADO  # o Windows diz "Não respondendo" (imagem parada sozinha não é travamento)
         if o.connected is False:
             return State.DESCONECTADO
         if self._dead:
@@ -277,25 +317,32 @@ class SlotTracker:
         th = self.cfg.thresholds
         out: list[Signal] = []
         online = raw in (State.CACANDO, State.PARADO, State.ONLINE)
-        # Helper parou: Hunting Time subia e parou (painel aberto e legível)
-        if o.hunting_time is not None and online and not self.cfg.is_shop(self.slot):
+        shop = self.cfg.is_shop(self.slot)
+        # Helper parou: Hunting Time subia e parou (painel aberto e legível).
+        # Com você mexendo no PC, espera: pausar o Helper na mão não é problema; avisa se continuar
+        # parado depois que você sair.
+        if o.hunting_time is not None and online and not shop:
             running = self._last_ht_rise is not None and o.ts - self._last_ht_rise < th.helper_stall_s
             if running:
                 self._helper_was_running = True
                 self._helper_warned = False
-            elif self._helper_was_running and not self._helper_warned and self._last_ht_rise is not None:
+            elif self._helper_was_running and not self._helper_warned and self._last_ht_rise is not None \
+                    and not o.user_active:
                 self._helper_warned = True
                 self._helper_was_running = False
                 out.append(Signal("HELPER", "aviso", "HELPER PAROU",
-                                  f"Hunting Time parado há {o.ts - self._last_ht_rise:.0f} s"))
-        # HP baixo (aviso preventivo): 2 leituras seguidas abaixo do limite
-        if o.hp is not None and o.hp[1] > 0 and online and not self._dead:
-            pct = 100 * o.hp[0] / o.hp[1]
+                                  f"Hunting Time parado há {_ago(o.ts - self._last_ht_rise)}"))
+        # HP baixo (aviso preventivo): 2 leituras seguidas abaixo do limite, no máximo 1 a cada 15 min
+        hp = self._hp_now
+        if hp is not None and hp[1] > 0 and online and not self._dead and not shop:
+            pct = 100 * hp[0] / hp[1]
             if 0 < pct < th.hp_low_pct:
                 self._hp_low_n += 1
-                if self._hp_low_n >= 2 and not self._hp_low_warned:
+                recent = self._hp_low_at is not None and o.ts - self._hp_low_at < HP_LOW_EVERY_S
+                if self._hp_low_n >= 2 and not self._hp_low_warned and not recent:
                     self._hp_low_warned = True
-                    out.append(Signal("HP_BAIXO", "aviso", "HP BAIXO", f"HP {o.hp[0]}/{o.hp[1]} ({pct:.0f}%)"))
+                    self._hp_low_at = o.ts
+                    out.append(Signal("HP_BAIXO", "aviso", "HP BAIXO", f"HP {hp[0]}/{hp[1]} ({pct:.0f}%)"))
             else:
                 self._hp_low_n = 0
                 if pct >= th.hp_low_pct + 10:
@@ -333,8 +380,8 @@ class SlotTracker:
         elif new == State.DESCONECTADO:
             parts.append("conexão com o servidor fechou")
         elif new == State.TRAVADO:
-            parts.append("janela sem responder" if self._hung_since else
-                         f"imagem parada há {o.frame_static_s:.0f} s")
+            since = (o.ts - self._hung_since) if self._hung_since else 0
+            parts.append(f'o Windows marcou a janela como "Não respondendo" há {_ago(since)}')
         elif new == State.FECHADO:
             parts.append("processo do jogo não existe mais")
         elif new == State.PARADO:
@@ -354,11 +401,18 @@ class SlotTracker:
         self._dead = False
         self._hp_zero = 0
         self._last_exp = None
-        self._last_ht = None
+        self._last_ht = self._last_ht_ts = self._ht_pending = None
         self._helper_was_running = False
         self._last_map = None
         self._hung_since = None
+        self._hp_max = self._hp_max_cand = None
+        self._hp_max_n = 0
         self._rate = ExpRate()
+
+
+def _ago(seconds: float) -> str:
+    """45 → '45 s'; 150 → '2 min'."""
+    return f"{seconds:.0f} s" if seconds < 120 else f"{seconds / 60:.0f} min"
 
 
 @dataclass

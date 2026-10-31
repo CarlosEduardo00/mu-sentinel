@@ -136,6 +136,10 @@ use o Telegram e tente de novo em alguns dias. Quando houver vaga:
   resolve. Quer ser lembrado enquanto o problema continua (ex.: para acordar)? Ligue o **lembrete** em
   *Configurações → Alertas*: chega "LEMBRETE: MORTE continua" a cada 5 min até você responder **/ok** no
   Telegram ou clicar em **OK, vi o alerta** no painel.
+- **Janela travada** é quando o Windows marca o jogo como "Não respondendo" por 30 s. Personagem parado
+  (a Loja, alguém na cidade) não conta.
+- Se o mesmo alerta acontecer 3 vezes em 30 min, a 3ª mensagem avisa que está **instável** e, por 30 min,
+  ele aparece só no painel do app (sem encher o celular).
 - **Pausar alertas** no topo do painel (30 min, 1 h, 2 h ou até retomar).
 - Se o mapa/HP aparecer como ILEGÍVEL: algum menu está por cima do HUD (inventário, Helper…).
   Isso nunca gera alerta crítico.
