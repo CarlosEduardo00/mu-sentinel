@@ -29,6 +29,7 @@ from .panels import PanelEvent, PanelService
 from .perception import autocal
 from .perception import panels as P
 from .perception.autocal import hunting_time_roi
+from .perception.profile import FIELD_LABELS_PT
 from .perception.reader import DEFAULT_FIELDS
 from .remote import BOT_COMMANDS, HELP, KEYBOARD, TARGETS_FILE, RemoteCommands, parse
 from .state_machine import CRITICAL, Observation, SlotTracker, State
@@ -413,6 +414,8 @@ class Engine:
                 ht_hit = self.panels.hit(s.n, "caca")  # janela de caça desta janela, onde quer que esteja
                 fields = DEFAULT_FIELDS if ht_hit is None else tuple(f for f in DEFAULT_FIELDS if f != "hunting_time")
                 r = reader.read(img, fields)
+                if getattr(reader, "grown", None):
+                    self._save_grown(reader, frame.size, s.n)
                 for fname, fr in r.fields.items():
                     if fr.raw.startswith("erro:") and (fname, fr.raw) not in self._read_errors:
                         self._read_errors.add((fname, fr.raw))  # registra cada erro diferente uma vez
@@ -467,6 +470,24 @@ class Engine:
             reader = HudReader(prof, ocr=self._ocr)
         self._readers[size] = reader
         return reader
+
+    def _save_grown(self, reader, size: tuple[int, int], slot: int) -> None:
+        """O número de um campo cresceu (ex.: HP passou de 999) e a área dele foi ampliada: salva o perfil."""
+        if not self._cal_lock.acquire(blocking=False):
+            return  # calibração em andamento: ela recarrega o perfil; tenta salvar no próximo ciclo
+        try:
+            if self._readers.get(size) is not reader:
+                return
+            names = ", ".join(FIELD_LABELS_PT.get(f, f) for f in sorted(reader.grown))
+            w, h = size
+            reader.profile.save(paths.profile_path(w, h))
+            reader.grown.clear()
+            log.info("área ampliada no perfil %dx%d: %s", w, h, names)
+            self.bus.emit("info", f"o número cresceu e a área de leitura foi ampliada sozinha: {names}", slot=slot)
+        except OSError:
+            log.exception("não consegui salvar o perfil com a área ampliada")
+        finally:
+            self._cal_lock.release()
 
     def reload_profiles(self) -> None:
         with self._lock:

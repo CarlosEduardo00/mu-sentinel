@@ -117,6 +117,26 @@ def test_death_alert_within_30s(rig):
     assert ext.sent[0].startswith('[CRÍTICO] MORTE - Slot 1 "Slot 1" (Kanturu 213,39)')
 
 
+def test_grown_reading_area_is_saved(rig, monkeypatch, tmp_path):
+    """O número cresceu (HP passou de 999) e o leitor ampliou a área: o perfil é salvo uma vez."""
+    from musentinel.core.perception.profile import Profile
+
+    saved = tmp_path / "800x600.json"
+    monkeypatch.setattr(engine_mod.paths, "profile_path", lambda w, h: saved)  # não mexe no perfil dos outros testes
+    game, e, ext, run, clock = rig(1)
+    reader = e._readers[(800, 600)]
+    reader.profile = Profile(name="800x600", client_size=(800, 600))
+    reader.grown = {"hp"}
+    events = []
+    e.bus.subscribe("event", lambda ev: events.append(ev.message))
+    run(1)
+    assert saved.exists() and reader.grown == set()
+    assert any("HP (orbe vermelho)" in m for m in events)
+    saved.unlink()
+    run(2)
+    assert not saved.exists()  # nada cresceu de novo: não salva à toa
+
+
 def test_single_disconnect_alert(rig):
     game, e, ext, run, clock = rig(2)
     run(5)

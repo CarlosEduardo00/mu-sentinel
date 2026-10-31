@@ -17,6 +17,10 @@ DEFAULT_FIELDS = ("hp", "coords", "exp", "hunting_time", "map")
 UNKNOWN_CHAR_CONF = 0.3  # confiança que o template devolve quando sobra tinta sem caractere
 VERDICT_OK_S = 120  # o OCR confirmou este texto: aceita o mesmo texto sem OCR por 2 min
 VERDICT_FAIL_S = 30  # o OCR não confirmou: não tenta de novo o mesmo texto por 30 s
+GROW_TRIES = 3  # número encostado na borda: amplia a área até 3 vezes (1 dígito por vez)
+GROW_KEEP = 6  # folga (px) que fica em volta do número quando a área cresce sozinha
+GROW_MAX_W = 420  # área de um campo nunca passa disso (EXP de 20 dígitos cabe)
+CUT_NOTE = "número cortado na borda da área"
 
 
 def _is_subsequence(part: str, whole: str) -> bool:
@@ -60,6 +64,7 @@ class HudReader:
         self.maps = maps or list(DEFAULT_MAPS)
         self.min_confidence = min_confidence
         self.panel_match_min = panel_match_min
+        self.grown: set[str] = set()  # campos cuja área cresceu sozinha (quem usa o leitor salva o perfil)
 
     def read(self, image: np.ndarray, fields: tuple[str, ...] = DEFAULT_FIELDS) -> HudReading:
         t0 = time.perf_counter()
@@ -88,16 +93,7 @@ class HudReader:
             return absent("painel fechado")
 
         if kind == "glyph":
-            font = self.profile.reading_font(name)
-            if not font.glyphs:
-                return unreadable("sem fonte calibrada")
-            text, conf, extent = glyphs.read_text_ex(crop, font, CHARSETS.get(name))
-            if not text:
-                return unreadable("", 0.0)
-            if not self._in_place(name, extent):
-                # texto fora do alinhamento de sempre: provavelmente meio coberto por um menu
-                return unreadable(text, min(conf, 0.4))
-            return self._glyph_result(name, crop, text, conf)
+            return self._read_glyph(image, name, roi, learn_roi=True)
 
         if name == "map":
             ref_name, ref_score = self._match_map_ref(crop)
@@ -141,19 +137,75 @@ class HudReader:
     def read_field_at(self, image: np.ndarray, name: str, roi) -> FieldReading:
         """Lê um campo de dígitos numa região dada (ex.: tempo de caça no Instant Hunting Log desta
         janela, que o usuário pode ter arrastado). O painel já foi achado aberto por quem chamou."""
-        crop = roi.crop(image)
-        if crop.size == 0:
+        if roi.crop(image).size == 0:
             return unreadable("região fora da janela")
+        try:
+            return self._read_glyph(image, name, roi, learn_roi=False, anchored=False)
+        except Exception as exc:
+            return unreadable(f"erro: {type(exc).__name__}: {exc}")
+
+    def _read_glyph(self, image: np.ndarray, name: str, roi, learn_roi: bool, anchored: bool = True) -> FieldReading:
+        """Lê um campo de dígitos. Se o número encosta na borda da área, amplia a área (um dígito por
+        vez) até achar o fim dele: HP 1200 numa área feita para "980/980" não pode virar "200".
+
+        Número que continua cortado depois de ampliar = ilegível (nunca um número pela metade).
+        `learn_roi`: guarda a área ampliada no perfil (self.grown avisa quem precisa salvar).
+        """
         font = self.profile.reading_font(name)
         if not font.glyphs:
             return unreadable("sem fonte calibrada")
-        try:
-            text, conf, _ = glyphs.read_text_ex(crop, font, CHARSETS.get(name))
-        except Exception as exc:
-            return unreadable(f"erro: {type(exc).__name__}: {exc}")
-        if not text:
-            return unreadable("", 0.0)
-        return self._glyph_result(name, crop, text, conf)
+        cs = CHARSETS.get(name)
+        H, W = image.shape[:2]
+        dw = glyphs.digit_width(font)
+        step = dw + 2
+        edge = max(glyphs.EDGE_COLS, int(0.75 * dw) + 1)  # um "1" cortado inteiro + o espaço até o vizinho
+        max_gap = max(4, int(0.7 * dw))  # espaço entre dígitos vizinhos (medido: até 4 px)
+        x0, x1 = roi.x, roi.x + roi.w
+        best = None  # última leitura que valeu: (recorte, texto, confiança, extensão, x0)
+        for attempt in range(GROW_TRIES + 1):
+            crop = image[roi.y:roi.y + roi.h, x0:x1]
+            info: dict = {}
+            text, conf, extent = glyphs.read_text_ex(crop, font, cs, info=info)
+            if best is None:
+                if not text or extent is None:
+                    return unreadable("", 0.0)
+                first_text = text
+            else:
+                span = (best[3][0] + best[4] - x0, best[3][1] + best[4] - x0)  # leitura anterior, aqui
+                # ampliar só pode acrescentar caracteres colados nas pontas; sem caractere novo, ou se
+                # mudou o que já estava dentro, o que encostava na borda não era número: fica a anterior
+                if not text or text == best[1] or best[1] not in text \
+                        or not glyphs.attached(info.get("chars", []), span, max_gap):
+                    crop, text, conf, extent, x0 = best
+                    break
+            best = (crop, text, conf, extent, x0)
+            left, right = glyphs.near_edges(crop, extent, info.get("line"), edge)
+            left, right = left and x0 > 0, right and x1 < W  # na beirada da janela não há mais o que ver
+            if not (left or right):
+                break
+            if attempt == GROW_TRIES or x1 - x0 + step > GROW_MAX_W:
+                return unreadable(f"{text} ({CUT_NOTE})", min(conf, 0.3))
+            x0, x1 = (max(0, x0 - step) if left else x0), (min(W, x1 + step) if right else x1)
+        ext = (extent[0] + x0 - roi.x, extent[1] + x0 - roi.x)  # na área original
+        if anchored and not self._in_place(name, ext):
+            # texto fora do alinhamento de sempre: provavelmente meio coberto por um menu
+            return unreadable(text, min(conf, 0.4))
+        r = self._glyph_result(name, crop, text, conf)
+        if learn_roi and r.ok and text != first_text:
+            self._grow_roi(name, roi, x0 + extent[0], x0 + extent[1], W)
+        return r
+
+    def _grow_roi(self, name: str, roi, tx0: int, tx1: int, width: int) -> None:
+        """A área passa a caber o número inteiro, com folga (o perfil é salvo por quem usa o leitor)."""
+        from .profile import Roi
+
+        nx0 = max(0, min(roi.x, tx0 - GROW_KEEP))
+        nx1 = min(width, max(roi.x + roi.w, tx1 + GROW_KEEP))
+        shift = roi.x - nx0
+        if shift and name in self.profile.extents:  # posições guardadas são relativas à área
+            self.profile.extents[name] = [(a + shift, b + shift) for a, b in self.profile.extents[name]]
+        self.profile.rois[name] = Roi(x=nx0, y=roi.y, w=nx1 - nx0, h=roi.h)
+        self.grown.add(name)
 
     def _remembered(self, key: tuple[str, str]) -> tuple[bool, FieldReading | None]:
         hit = self._verdicts.get(key)

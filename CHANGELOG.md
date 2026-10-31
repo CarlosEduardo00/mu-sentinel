@@ -1,5 +1,14 @@
 # Novidades do MU Sentinel
 
+## [0.2.2] - 2026-10-31
+
+### Correções
+- **Número maior que a área de leitura**: quando o HP passava de 1000 (ou o EXP e as coordenadas
+  ganhavam um dígito), o primeiro dígito ficava fora da área e o app lia "200" no lugar de "1200",
+  mandando avisos de HP baixo falsos. Agora, se o número encosta na borda, o app amplia a área até ver
+  o número inteiro, e a área nova fica salva. Número que não dá para ver inteiro vira "ilegível",
+  nunca um valor pela metade.
+
 ## [0.2.1] - 2026-10-31
 
 ### Correções

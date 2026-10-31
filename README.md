@@ -120,6 +120,9 @@ parada na cidade de propósito); desconexão, travamento e fechamento valem para
 - Um estado novo só vale após 2 ciclos seguidos iguais (ciclo de 2 s).
 - Leituras erradas do HUD não viram alerta: HP com máximo diferente do de sempre, Hunting Time que pula
   mais do que o tempo que passou e contador do Gremory que cai uma vez só são ignorados.
+- Número maior que a área de leitura (HP passou de 999, EXP ganhou um dígito): se o texto encosta na
+  borda, o leitor amplia a área um dígito por vez até ver o número inteiro (só aceita dígitos colados
+  no número) e salva a área nova no perfil. Se não couber, a leitura é "ilegível", nunca pela metade.
 - Uma mensagem por acontecimento (e outra quando resolve). Lembrete opcional (`alertas.lembrete_critico`):
   "LEMBRETE: X continua" a cada 5 min, sem repetir o print, até o `/ok` (Telegram) ou **OK, vi o alerta**;
   no máximo 3 se só houver CallMeBot.

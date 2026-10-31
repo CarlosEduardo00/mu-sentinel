@@ -253,11 +253,13 @@ def read_text(roi_bgr: np.ndarray, font: GlyphFont, charset: str | None = None) 
 
 
 def read_text_ex(
-    roi_bgr: np.ndarray, font: GlyphFont, charset: str | None = None, debug: list | None = None
+    roi_bgr: np.ndarray, font: GlyphFont, charset: str | None = None, debug: list | None = None,
+    info: dict | None = None,
 ) -> tuple[str, float, tuple[int, int] | None]:
     """Como read_text, mas também devolve a extensão horizontal (x0, x1) do texto lido.
 
     `debug` (lista) recebe o motivo de cada recusa — usado só para diagnóstico.
+    `info` (dict) recebe 'line': (y0, y1) da linha de texto lida.
     """
     log = debug.append if debug is not None else (lambda _m: None)
     im = ink(roi_bgr)
@@ -322,6 +324,9 @@ def read_text_ex(
     extent = (chosen[0].x, chosen[-1].x + chosen[-1].w)
     text = "".join(h.char for h in chosen)
     conf = min(h.score for h in chosen)
+    if info is not None:
+        info["line"] = (line_y, line_y + max(h.h for h in chosen))
+        info["chars"] = [(h.x, h.w, h.char) for h in chosen]
 
     # Margem: se outro caractere pontua quase igual no mesmo lugar (6 × 8, 2 × 8),
     # a leitura é ambígua e não pode sair confiante.
@@ -355,19 +360,78 @@ def read_text_ex(
 
 UNCOVERED_MAX = 3  # colunas seguidas com tinta e sem caractere
 SMALL_FONT_H = 12  # altura de linha (px) a partir da qual a fonte é "grande" (1280x960)
+EDGE_COLS = 3  # texto a até 3 px da borda da área: o número pode continuar do lado de fora
 
 
-def _uncovered_ink(im: np.ndarray, chosen: list[Hit], line_y: int) -> int:
-    h = max(c.h for c in chosen)
-    band = im[line_y : line_y + h]
-    peak = float(band.max())
+def _stroke_cols(band: np.ndarray) -> np.ndarray:
+    """Colunas com traço de letra na faixa da linha de texto (respingo de magia ao fundo é baixinho)."""
+    h = band.shape[0]
+    peak = float(band.max()) if band.size else 0.0
     if h <= SMALL_FONT_H:
         # fonte pequena (janela 800x600): traço de 1 px, mais apagado pelo antisserrilhado
         thr, min_px = max(60.0, 0.45 * peak), 2
     else:
         thr, min_px = max(100.0, 0.6 * peak), max(2, int(0.3 * h))
-    # conta só colunas com traço de letra (respingo de magia ao fundo é baixinho)
-    cols = (band >= thr).sum(axis=0) >= min_px
+    return (band >= thr).sum(axis=0) >= min_px
+
+
+def near_edges(roi_bgr: np.ndarray, extent: tuple[int, int] | None,
+               line: tuple[int, int] | None, cols: int = EDGE_COLS) -> tuple[bool, bool]:
+    """O texto lido encosta (ou quase) na borda esquerda / direita da área?
+
+    Junta a posição dos caracteres lidos com traço de tinta na borda: um "1" cortado ao meio
+    não vira caractere, mas deixa tinta na beirada. Encostar = o número pode continuar fora
+    da área (HP 1200 numa área feita para "980/980" vira "200").
+    """
+    if extent is None:
+        return False, False
+    w = roi_bgr.shape[1]
+    left, right = extent[0] <= cols, extent[1] >= w - cols
+    if line is not None and not (left and right):
+        band = ink(roi_bgr)[line[0]:line[1]]
+        if band.size:
+            # sensível de propósito (o miolo de um "0" cortado tem só 2 px claros por coluna): disparar à
+            # toa custa só uma releitura, que não acha caractere novo e fica com a leitura de antes
+            thr = max(90.0, 0.5 * float(band.max()))
+            col_max = band.max(axis=0)
+            left = left or bool((col_max[:cols] >= thr).any())
+            right = right or bool((col_max[-cols:] >= thr).any())
+    return left, right
+
+
+def attached(chars: list[tuple[int, int, str]], span: tuple[int, int], max_gap: int) -> bool:
+    """Os caracteres fora de `span` (achados ao ampliar a área) estão colados no número, em sequência?
+    Algo solto a vários px (arte do orbe, outro texto) não faz parte dele. A "/" do EXP tem espaço
+    em volta ("81186 / 1316440"): perto dela vale um espaço maior."""
+    inside = [c for c in chars if c[0] + c[1] > span[0] + 1 and c[0] < span[1] - 1]
+    left = sorted((c for c in chars if c[0] + c[1] <= span[0] + 1), key=lambda c: -c[0])
+    right = sorted((c for c in chars if c[0] >= span[1] - 1), key=lambda c: c[0])
+
+    def ok(gap: int, a: str, b: str) -> bool:
+        return gap <= (3 * max_gap if "/" in (a, b) else max_gap)
+
+    edge, nb = span[0], (min(inside)[2] if inside else "")
+    for x, w, ch in left:  # do número para fora
+        if not ok(edge - (x + w), ch, nb):
+            return False
+        edge, nb = x, ch
+    edge, nb = span[1], (max(inside)[2] if inside else "")
+    for x, w, ch in right:
+        if not ok(x - edge, nb, ch):
+            return False
+        edge, nb = x + w, ch
+    return True
+
+
+def digit_width(font: GlyphFont) -> int:
+    """Largura típica de um dígito na fonte (px)."""
+    ws = [g.image.shape[1] for c, vs in font.glyphs.items() if c.isdigit() and c != "1" for g in vs]
+    return int(np.median(ws)) if ws else 8
+
+
+def _uncovered_ink(im: np.ndarray, chosen: list[Hit], line_y: int) -> int:
+    h = max(c.h for c in chosen)
+    cols = _stroke_cols(im[line_y : line_y + h])
     covered = np.zeros_like(cols)
     for c in chosen:
         covered[max(0, c.x - 1) : c.x + c.w + 1] = True
