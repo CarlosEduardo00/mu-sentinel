@@ -16,6 +16,14 @@ serão feitas, para não correr risco de banimento.
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
+## Testes automáticos
+
+[![Testes](https://github.com/CarlosEduardo00/mu-sentinel/actions/workflows/testes.yml/badge.svg)](https://github.com/CarlosEduardo00/mu-sentinel/actions/workflows/testes.yml)
+
+`.\.venv\Scripts\python.exe -m pytest` roda tudo no PC. No GitHub, `.github/workflows/testes.yml` roda a mesma
+suíte no Windows com Python 3.12 a cada envio para a `main` e em pull requests (a tela é testada sem abrir
+janela, com `QT_QPA_PLATFORM=offscreen`).
+
 ## Abrir pelo código-fonte
 
 ```powershell
