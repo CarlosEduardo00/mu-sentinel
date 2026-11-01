@@ -3,7 +3,7 @@
 App desktop para Windows que monitora janelas do MU Online (Webzen), detecta morte,
 desconexão, travamento e caça parada, e avisa pelo Telegram e no Windows.
 
-**Baixar:** zip da versão mais nova em [Releases](https://github.com/OWNER/mu-sentinel/releases/latest)
+**Baixar:** zip da versão mais nova em [Releases](https://github.com/CarlosEduardo00/mu-sentinel/releases/latest)
 (passo a passo no [LEIA-ME](LEIA-ME.md)). Depois de instalado, o próprio app avisa e instala as versões novas.
 
 > A política operacional da Webzen proíbe macros e programas não oficiais e prevê banimento
@@ -57,7 +57,7 @@ O script roda o `build.ps1` completo, cria a tag `vX.Y.Z`, envia para o GitHub e
 zip, o `.sha256` e as novidades. Precisa do `gh` logado (`gh auth login`, uma vez).
 
 Como o app se atualiza (`core/updater.py`): ao abrir e a cada 12 h ele consulta
-`api.github.com/repos/OWNER/mu-sentinel/releases`. Se houver versão mais nova (rascunhos e pré-releases
+`api.github.com/repos/CarlosEduardo00/mu-sentinel/releases`. Se houver versão mais nova (rascunhos e pré-releases
 ficam de fora), mostra as novidades de todas as versões no meio. "Atualizar agora" baixa o zip para
 `%LOCALAPPDATA%\MUSentinel\atualizacao`, confere tamanho e SHA-256 (o `digest` do GitHub ou o `.sha256`
 da release) e abre o `MUSentinel.exe` novo com `--concluir-atualizacao`. Ele espera o app antigo fechar,

@@ -34,7 +34,7 @@ from .changelog import _key, is_newer
 
 log = logging.getLogger(__name__)
 
-REPO = "OWNER/mu-sentinel"  # dono/nome do repositório público no GitHub
+REPO = "CarlosEduardo00/mu-sentinel"  # dono/nome do repositório público no GitHub
 API = "https://api.github.com/repos/{repo}/releases?per_page=20"
 ASSET = "MUSentinel-v{version}-win64.zip"
 EXE = "MUSentinel.exe"

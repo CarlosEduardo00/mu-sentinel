@@ -47,7 +47,7 @@ Os painéis (C, I, caçada, Gremory) se ajustam sozinhos a qualquer resolução.
 ## Instalar
 
 0. Baixe o arquivo `MUSentinel-vX.Y.Z-win64.zip` da versão mais nova em
-   <https://github.com/OWNER/mu-sentinel/releases/latest>.
+   <https://github.com/CarlosEduardo00/mu-sentinel/releases/latest>.
 1. **Extraia o `.zip` antes de abrir:** botão direito no `.zip` → **Extrair tudo…** → escolha uma pasta sua
    (ex.: `C:\Jogos\MUSentinel`). Não precisa ser em Arquivos de Programas.
    Abrir o exe direto de dentro do zip dá o erro *"Failed to load Python DLL … python312.dll"*.
