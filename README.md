@@ -3,7 +3,7 @@
 **Vigia as suas janelas do MU Online e avisa no celular, pelo Telegram, quando o personagem morre, cai do
 servidor, a janela trava ou fecha, ou a caça para.** Funciona com uma ou várias contas abertas ao mesmo tempo.
 
-[![Baixar o MU Sentinel](https://img.shields.io/badge/BAIXAR-MU%20Sentinel%20para%20Windows-2ea44f?style=for-the-badge)](https://github.com/CarlosEduardo00/mu-sentinel/releases/latest/download/MUSentinel-win64.zip)
+[![Baixar o MU Sentinel](https://img.shields.io/badge/%E2%AC%87%20Baixar%20o%20MU%20Sentinel%20para%20Windows-2ea44f?style=for-the-badge)](https://github.com/CarlosEduardo00/mu-sentinel/releases/latest/download/MUSentinel-win64.zip)
 ![Versão mais nova](https://img.shields.io/github/v/release/CarlosEduardo00/mu-sentinel?label=vers%C3%A3o%20mais%20nova&style=flat-square)
 
 Windows 10 ou 11 (64 bits) · grátis · não precisa instalar Python nem nada · se o botão não funcionar:
