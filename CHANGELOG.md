@@ -1,5 +1,15 @@
 # Novidades do MU Sentinel
 
+## [0.2.3] - 2026-11-01
+
+### Novo
+- **Atualização automática**: ao abrir, o app procura versão nova no GitHub e mostra as novidades com
+  os botões **Atualizar agora**, **Depois** e **Pular esta versão**. "Atualizar agora" baixa a versão nova,
+  confere se o arquivo veio inteiro e sem alteração (SHA-256), troca os arquivos e abre o app de novo. A
+  configuração, o Telegram e os slots continuam como estão.
+- Procurar na hora: *Ajuda → Procurar atualizações*. Desligar a procura: *Configurações → Monitor*.
+- O app agora está no GitHub, com o código e os downloads de cada versão.
+
 ## [0.2.2] - 2026-10-31
 
 ### Correções

@@ -11,3 +11,4 @@ reports/
 *.egg-info/
 .build-venv/
 smoke_test.txt
+*.zip.sha256

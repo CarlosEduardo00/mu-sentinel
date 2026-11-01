@@ -365,6 +365,10 @@ class MainWindow(QMainWindow):
         self.engine.start()
         self.refresh_status()
         self._build_footer()
+        from .update_dialog import UpdateController
+
+        self.updates = UpdateController(self)
+        self.updates.start()
         if not start_hidden:
             self.show()
         self._pending_notes = self._new_version_notes()
@@ -382,8 +386,22 @@ class MainWindow(QMainWindow):
         v.setStyleSheet("color:#888; padding:0 6px;")
         v.setToolTip("Versão instalada. Clique em 'novidades' para ver o que mudou.")
         v.linkActivated.connect(lambda _: self.show_whats_new(all_versions=True))
+        up = QLabel()
+        up.setTextFormat(Qt.TextFormat.RichText)
+        up.setStyleSheet("padding:0 6px;")
+        up.setToolTip("Versão nova publicada no GitHub. Clique para ver as novidades e atualizar.")
+        up.linkActivated.connect(lambda _: self.updates.offer())
+        up.hide()
+        self.statusBar().addPermanentWidget(up)
         self.statusBar().addPermanentWidget(v)
         self.version_label = v
+        self.update_label = up
+
+    def set_update_link(self, version: str | None) -> None:
+        if version:
+            self.update_label.setText(f"<a href='atualizar' style='color:#0b57d0; font-weight:bold'>"
+                                      f"atualização {version} disponível</a>")
+        self.update_label.setVisible(bool(version))
 
     def _new_version_notes(self) -> str:
         """Novidades desde a última versão que o usuário viu (só para quem já usava o app)."""
@@ -432,6 +450,9 @@ class MainWindow(QMainWindow):
         q.triggered.connect(self.quit)
         m.addAction(q)
         h = self.menuBar().addMenu("A&juda")
+        a = QAction("Procurar atualizações…", self)
+        a.triggered.connect(lambda: self.updates.check(manual=True))
+        h.addAction(a)
         a = QAction("Sobre e aviso de risco", self)
         a.triggered.connect(self.about)
         h.addAction(a)
@@ -530,6 +551,8 @@ class MainWindow(QMainWindow):
             self._render(self._last_snaps)  # voltou da bandeja: mostra o estado mais recente na hora
         if getattr(self, "_pending_notes", ""):
             QTimer.singleShot(500, self.show_whats_new)  # atualizado com o app minimizado
+        if hasattr(self, "updates"):
+            self.updates.on_window_shown()  # versão nova achada com o app na bandeja
 
     def changeEvent(self, e):  # noqa: N802
         super().changeEvent(e)
@@ -736,6 +759,10 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "Sair", "Sair do MU Sentinel? O monitoramento e os alertas param.") \
                 != QMessageBox.StandardButton.Yes:
             return
+        self.quit_now()
+
+    def quit_now(self) -> None:
+        """Fecha sem perguntar (usado também para concluir uma atualização)."""
         self._quitting = True
         self.engine.stop()
         self.tray.hide()

@@ -46,6 +46,8 @@ Os painéis (C, I, caçada, Gremory) se ajustam sozinhos a qualquer resolução.
 
 ## Instalar
 
+0. Baixe o arquivo `MUSentinel-vX.Y.Z-win64.zip` da versão mais nova em
+   <https://github.com/OWNER/mu-sentinel/releases/latest>.
 1. **Extraia o `.zip` antes de abrir:** botão direito no `.zip` → **Extrair tudo…** → escolha uma pasta sua
    (ex.: `C:\Jogos\MUSentinel`). Não precisa ser em Arquivos de Programas.
    Abrir o exe direto de dentro do zip dá o erro *"Failed to load Python DLL … python312.dll"*.
@@ -144,6 +146,20 @@ use o Telegram e tente de novo em alguns dias. Quando houver vaga:
 - Se o mapa/HP aparecer como ILEGÍVEL: algum menu está por cima do HUD (inventário, Helper…).
   Isso nunca gera alerta crítico.
 - Deixe a janela do jogo **não minimizada** (pode ficar atrás de outras janelas).
+
+## Atualizações
+
+Ao abrir, o app procura uma versão nova no GitHub. Se tiver, aparecem as novidades com os botões
+**Atualizar agora**, **Depois** e **Pular esta versão**. "Atualizar agora" baixa, confere o arquivo e abre o
+app de novo já atualizado, em alguns segundos. Configuração, Telegram e slots continuam como estão.
+
+- Com o app na bandeja, vem um aviso perto do relógio; o rodapé do painel mostra "atualização X disponível".
+- Procurar na hora: *Ajuda → Procurar atualizações*. Desligar: *Configurações → Monitor*.
+- A procura só consulta o GitHub; nada seu é enviado.
+- Quem tem a versão 0.2.2 ou anterior instala a 0.2.3 do jeito normal uma vez (saia do app, apague a
+  pasta antiga e extraia o zip novo). Daí em diante as atualizações são pelo próprio app.
+- Se a pasta do app estiver num lugar que pede administrador (ex.: Arquivos de Programas), o app não
+  consegue se trocar sozinho e abre a página de download.
 
 ## Energia
 

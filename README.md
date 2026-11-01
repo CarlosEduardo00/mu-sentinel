@@ -1,7 +1,10 @@
 # MU Sentinel
 
 App desktop para Windows que monitora janelas do MU Online (Webzen), detecta morte,
-desconexão, travamento e caça parada, e avisa pelo WhatsApp.
+desconexão, travamento e caça parada, e avisa pelo Telegram e no Windows.
+
+**Baixar:** zip da versão mais nova em [Releases](https://github.com/OWNER/mu-sentinel/releases/latest)
+(passo a passo no [LEIA-ME](LEIA-ME.md)). Depois de instalado, o próprio app avisa e instala as versões novas.
 
 > A política operacional da Webzen proíbe macros e programas não oficiais e prevê banimento
 > permanente, inclusive de todas as contas ligadas à mesma pessoa. Os níveis 1 a 4 enviam teclas
@@ -39,9 +42,27 @@ para refazer: *Arquivo → Assistente de configuração* ou `--assistente`.
 
 Cria um venv limpo, roda os testes, gera `dist\MUSentinel\` (PyInstaller onedir, sem UPX), faz o
 smoke test do `.exe` com dados zerados e compacta em `MUSentinel-vX.Y.Z-win64.zip`. O zip leva o
-`LEIA-ME.md` com o passo a passo para quem vai usar. A versão vem do `pyproject.toml`.
+`LEIA-ME.md` com o passo a passo para quem vai usar. A versão vem de `src\musentinel\_version.py`.
 Assinatura de código opcional: variável `MUSENTINEL_SIGN_CMD` (ver o topo do `build.ps1`).
 Antes de distribuir, teste o zip numa máquina/VM sem Python.
+
+## Lançar uma versão (atualização automática)
+
+1. Mude o número em `src\musentinel\_version.py` e escreva a seção `## [X.Y.Z] - AAAA-MM-DD` no topo do
+   `CHANGELOG.md` (é o texto que aparece no aviso de atualização).
+2. Faça o commit.
+3. Rode `.\lancar.ps1` (ou `.\lancar.ps1 -Rascunho` para revisar a release antes de publicar).
+
+O script roda o `build.ps1` completo, cria a tag `vX.Y.Z`, envia para o GitHub e publica a release com o
+zip, o `.sha256` e as novidades. Precisa do `gh` logado (`gh auth login`, uma vez).
+
+Como o app se atualiza (`core/updater.py`): ao abrir e a cada 12 h ele consulta
+`api.github.com/repos/OWNER/mu-sentinel/releases`. Se houver versão mais nova (rascunhos e pré-releases
+ficam de fora), mostra as novidades de todas as versões no meio. "Atualizar agora" baixa o zip para
+`%LOCALAPPDATA%\MUSentinel\atualizacao`, confere tamanho e SHA-256 (o `digest` do GitHub ou o `.sha256`
+da release) e abre o `MUSentinel.exe` novo com `--concluir-atualizacao`. Ele espera o app antigo fechar,
+troca o `MUSentinel.exe` e a pasta `_internal`, volta tudo se algo falhar e reabre o app. `config.yaml`,
+`portable.flag` e `data\` não são tocados. Log da troca: `logs\atualizacao.log`.
 
 ## Alertas no celular
 
@@ -153,6 +174,9 @@ ou fechar a tampa coloca o Windows em espera mesmo assim: o painel avisa. Ative
 `%APPDATA%\MUSentinel\` (ou `data\` ao lado do .exe com `portable.flag`):
 `config.yaml` (sem segredos) · `profiles\*.json` · `events.db` (histórico, aba Eventos, exporta CSV) ·
 `logs\musentinel.log` (10 MB × 5, telefones mascarados) · `captures\prints\` (botão Print).
+
+Conexões que o app faz: Telegram e CallMeBot (se ligados) e o GitHub para procurar atualizações
+(desliga em *Configurações → Monitor*). Nenhum dado do usuário vai para o GitHub.
 
 ## Preparar o ambiente (desenvolvimento)
 

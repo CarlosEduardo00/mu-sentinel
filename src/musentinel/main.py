@@ -5,6 +5,7 @@ Uso:
     musentinel --minimizado  começa só na bandeja
     musentinel --calibracao  abre só a tela de calibração
     musentinel --smoke-test  abre, carrega a config, roda 1 ciclo do monitor e fecha (teste do .exe)
+    musentinel --concluir-atualizacao <pasta> <pid> [args]   uso interno da atualização automática
 """
 
 from __future__ import annotations
@@ -64,12 +65,18 @@ def lower_priority() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    from .core import updater
+
+    if raw[:1] == [updater.FINISH_FLAG]:  # exe novo terminando uma atualização (sem tela, sem mutex)
+        return updater.finish_main(raw[1:])
+
     ap = argparse.ArgumentParser(prog="musentinel")
     ap.add_argument("--minimizado", action="store_true", help="começa só na bandeja")
     ap.add_argument("--calibracao", action="store_true", help="abre só a tela de calibração")
     ap.add_argument("--smoke-test", action="store_true", help="abre, roda 1 ciclo e fecha (código 0 = ok)")
     ap.add_argument("--assistente", action="store_true", help="abre o assistente de configuração")
-    a = ap.parse_args(argv)
+    a = ap.parse_args(raw)
 
     if a.calibracao:
         from .gui.calibration import main as calibration_main

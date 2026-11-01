@@ -317,6 +317,9 @@ class SettingsDialog(QDialog):
         self.p_warn.setChecked(p.warn_closed)
         f.addRow(self.p_on)
         f.addRow(self.p_warn)
+        self.u_check = QCheckBox("Procurar atualizações ao abrir (consulta o GitHub; nada seu é enviado)")
+        self.u_check.setChecked(self.cfg.check_updates)
+        f.addRow(self.u_check)
         return w
 
     def _tab_thresholds(self) -> QWidget:
@@ -412,6 +415,7 @@ class SettingsDialog(QDialog):
             c.monitor.keep_display_on = self.m_display.isChecked()
             c.panels.enabled = self.p_on.isChecked()
             c.panels.warn_closed = self.p_warn.isChecked()
+            c.check_updates = self.u_check.isChecked()
             t = c.thresholds
             t.hp_low_pct, t.death_hp_reads = self.t_hp.value(), self.t_hp0.value()
             t.exp_stall_min, t.helper_stall_s = self.t_exp.value(), self.t_helper.value()
