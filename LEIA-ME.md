@@ -39,7 +39,7 @@ mapa, coordenadas e o tempo de caça (na janela de caça, onde quer que você a 
 - quando abre uma janela de um tamanho que ainda não tem perfil;
 - quando o HUD de uma janela fica ilegível por uns 30 s (no máximo 1 vez a cada 10 min por janela).
 
-Também dá para pedir com o app aberto: botão **Calibrar** no quadro de cada janela, ou *Arquivo → Calibrar
+Também dá para pedir com o app aberto: botão **Calibrar** no quadro de cada janela, ou *Leitura → Calibrar
 todas as janelas agora*. Use depois de mudar a resolução ou o layout. Aparece um resumo do que foi lido e
 aprendido. Calibrar de novo com outros números na tela (ex.: depois de tomar dano) ensina dígitos que faltam.
 Os painéis (C, I, caçada, Gremory) se ajustam sozinhos a qualquer resolução.
@@ -60,7 +60,7 @@ Não precisa rodar como administrador.
 
 ## Assistente (primeira vez)
 
-1. **Janelas do jogo:** abra os clients (até 4) e dê um nome a cada slot (ex.: "Elf Kanturu").
+1. **Janelas do jogo:** abra os clients (até 4) e dê um nome a cada janela (ex.: "Elf Kanturu").
 2. **Perfil de resolução:** mostra se a sua janela já tem perfil. Se um colega com a mesma resolução
    já calibrou, dá para **importar** o perfil dele (`.json`, sem senhas nem chaves).
 3. **Alertas no celular:** Telegram (recomendado) e/ou WhatsApp. Veja abaixo.
@@ -89,8 +89,8 @@ Só as conversas da lista do app são atendidas:
 
 | Pedido | O que volta |
 | --- | --- |
-| `/status` | Estado de cada slot, mapa, HP, EXP/h e painéis abertos |
-| `/print 2` | Print da janela do slot 2 (sem número: todas) |
+| `/status` | Estado de cada janela, mapa, HP, EXP/h e painéis abertos |
+| `/print 2` | Print da janela 2 (sem número: todas) |
 | `/inventario 2` | Imagem do Inventário (I), espaços ocupados/livres, Zen e o que mudou desde o último pedido |
 | `/personagem 2` | Imagem da janela C: classe, level, pontos a distribuir, atributos |
 | `/cacada 2` | Instant Hunting Log: tempo de caça, EXP por segundo e por hora, abates, dano |
@@ -132,8 +132,13 @@ use o Telegram e tente de novo em alguns dias. Quando houver vaga:
 
 ## No dia a dia
 
-- Fechar a janela do app **não** desliga o monitor: ele fica no ícone perto do relógio.
+- Fechar a janela do app **não** desliga o monitor: ele fica no ícone do escudo perto do relógio.
   Para sair: botão direito no ícone → **Sair**.
+- A bolinha no ícone mostra como estão as janelas: 🟢 tudo certo, 🟡 atenção (caça parada, tela ilegível),
+  🔴 alerta (morte, queda, travou, fechou), ⚪ alertas pausados. Passe o mouse por cima para ler o resumo, ou
+  clique com o botão direito para pausar, testar ou abrir as Configurações.
+- No topo do app, uma frase resume tudo ("Tudo certo · 3 janelas", "1 alerta: Crusader MORTO"). O rodapé mostra
+  para onde os alertas vão (Telegram, WhatsApp, Windows) e se o monitor está rodando.
 - Cada acontecimento (morte, desconexão, janela travada ou fechada) gera **uma** mensagem, e outra quando
   resolve. Quer ser lembrado enquanto o problema continua (ex.: para acordar)? Ligue o **lembrete** em
   *Configurações → Alertas*: chega "LEMBRETE: MORTE continua" a cada 5 min até você responder **/ok** no
@@ -151,7 +156,7 @@ use o Telegram e tente de novo em alguns dias. Quando houver vaga:
 
 Ao abrir, o app procura uma versão nova no GitHub. Se tiver, aparecem as novidades com os botões
 **Atualizar agora**, **Depois** e **Pular esta versão**. "Atualizar agora" baixa, confere o arquivo e abre o
-app de novo já atualizado, em alguns segundos. Configuração, Telegram e slots continuam como estão.
+app de novo já atualizado, em alguns segundos. Configuração, Telegram e nomes das janelas continuam como estão.
 
 - Com o app na bandeja, vem um aviso perto do relógio; o rodapé do painel mostra "atualização X disponível".
 - Procurar na hora: *Ajuda → Procurar atualizações*. Desligar: *Configurações → Monitor*.

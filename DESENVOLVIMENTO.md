@@ -52,6 +52,11 @@ smoke test do `.exe` com dados zerados e compacta em `MUSentinel-vX.Y.Z-win64.zi
 `LEIA-ME.md` com o passo a passo para quem vai usar. A versão vem de `src\musentinel\_version.py`.
 Assinatura de código opcional: variável `MUSENTINEL_SIGN_CMD` (ver o topo do `build.ps1`).
 
+**Ícone e visual:** o ícone (escudo com olho) é desenhado em código em `gui/icons.py`; a bandeja usa o mesmo
+desenho com a bolinha de estado. Mudou o desenho? Rode `python -m musentinel.tools.make_icon` para refazer
+`assets\musentinel.ico` (o do `.exe`) e `assets\musentinel.png`, e faça o commit dos dois (um teste confere).
+Cores e estilo, nos temas claro e escuro do Windows, ficam em `gui/theme.py`.
+
 ## Lançar uma versão (atualização automática)
 
 1. Mude o número em `src\musentinel\_version.py` e escreva a seção `## [X.Y.Z] - AAAA-MM-DD` no topo do
@@ -103,7 +108,7 @@ Gerenciador de Credenciais do Windows (nunca no `config.yaml`, no log ou em expo
 - `core/perception/autocal.py`: o OCR da tela inteira acha mapa, coordenadas, HP, EXP (também quando vem em
   dois pedaços) e o tempo de caça; vira gabarito para criar/esticar ROIs e ensinar o leitor de glifos
   (`training.learn_sample`). Dispara sozinho (tamanho sem perfil; HP/EXP ilegível ~30 s, no máx. 1×/10 min por
-  janela, na thread dos painéis) ou pelo botão **Calibrar** / *Arquivo → Calibrar todas*. Salva o perfil do
+  janela, na thread dos painéis) ou pelo botão **Calibrar** / *Leitura → Calibrar todas*. Salva o perfil do
   usuário daquele tamanho e recarrega os leitores.
 - Tempo de caça é lido na posição do Instant Hunting Log de cada janela (`HudReader.read_field_at`).
 - Escala dos painéis medida pela distância título → textos fixos (`perception/panels.LANDMARKS`): 1024x768 com
@@ -175,7 +180,7 @@ ou fechar a tampa coloca o Windows em espera mesmo assim: o painel avisa. Ative
 ## Dados
 
 `%APPDATA%\MUSentinel\` (ou `data\` ao lado do .exe com `portable.flag`):
-`config.yaml` (sem segredos) · `profiles\*.json` · `events.db` (histórico, aba Eventos, exporta CSV) ·
+`config.yaml` (sem segredos) · `profiles\*.json` · `events.db` (aba Histórico, exporta CSV) ·
 `logs\musentinel.log` (10 MB × 5, telefones mascarados) · `captures\prints\` (botão Print).
 
 Conexões que o app faz: Telegram e CallMeBot (se ligados) e o GitHub para procurar atualizações

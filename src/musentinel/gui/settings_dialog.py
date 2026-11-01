@@ -1,4 +1,4 @@
-"""Tela de Configurações: WhatsApp (destinatários), monitor, limiares, alertas, cidades e slots.
+"""Tela de Configurações: WhatsApp (destinatários), monitor, limiares, alertas, cidades e nomes das janelas.
 
 Cada destinatário do WhatsApp tem número e chave do CallMeBot próprios: quem recebe o
 app de um colega cadastra o próprio número aqui. As chaves vão para o Gerenciador de
@@ -184,7 +184,7 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._tab_thresholds(), "Limiares")
         self.tabs.addTab(self._tab_alerts(), "Alertas")
         self.tabs.addTab(self._tab_cities(), "Cidades")
-        self.tabs.addTab(self._tab_slots(), "Slots")
+        self.tabs.addTab(self._tab_slots(), "Janelas")
         if tab == "whatsapp":
             self.tabs.setCurrentIndex(1)
         elif tab == "telegram":
@@ -366,7 +366,7 @@ class SettingsDialog(QDialog):
         for wdg in (self.a_repeat, self.a_max):
             wdg.setEnabled(a.repeat_critical)
             self.a_remind.toggled.connect(wdg.setEnabled)
-        f.addRow("Mesmo alerta do mesmo slot no máximo 1× a cada:", self.a_cool)
+        f.addRow("Mesmo alerta da mesma janela no máximo 1× a cada:", self.a_cool)
         f.addRow(self.q_on)
         f.addRow("Início:", self.q_start)
         f.addRow("Fim:", self.q_end)
@@ -384,11 +384,11 @@ class SettingsDialog(QDialog):
     def _tab_slots(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.addWidget(QLabel("Nome de cada slot (aparece nos alertas)."))
+        v.addWidget(QLabel("Nome de cada janela do jogo (aparece nos alertas)."))
         v.addWidget(shop_hint_label())
         slots = sorted(self.cfg.slots.items())
         self.stable = QTableWidget(len(slots), 2)
-        self.stable.setHorizontalHeaderLabels(["Slot", "Nome"])
+        self.stable.setHorizontalHeaderLabels(["Janela", "Nome"])
         self.stable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         for i, (n, s) in enumerate(slots):
             it = QTableWidgetItem(str(n))

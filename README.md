@@ -96,9 +96,12 @@ Pode deixá-los em qualquer lugar da tela.
 
 ### No computador
 
-- Um quadro para cada janela do jogo, com estado, HP, mapa, EXP por hora, Hunting Time, conexão e painéis abertos.
-- Aba **Eventos** com o histórico de tudo que aconteceu (dá para exportar).
-- Fica no ícone perto do relógio e pode **iniciar junto com o Windows**.
+- No topo, uma frase diz como está tudo: "Tudo certo · 3 janelas" ou "1 alerta: Crusader MORTO".
+- Um quadro para cada janela do jogo, com estado, barra de HP, mapa, EXP por hora, Hunting Time, conexão e
+  painéis abertos. O quadro com alerta fica com a borda vermelha.
+- Aba **Histórico** com tudo que aconteceu (dá para filtrar e exportar).
+- Fica no ícone do escudo perto do relógio, que muda de cor: 🟢 tudo certo, 🟡 atenção, 🔴 alerta, ⚪ alertas
+  pausados. Passe o mouse por cima para ler o resumo. Pode **iniciar junto com o Windows**.
 - **Calibra sozinho** para a resolução da sua janela (800x600 e 1024x768 já vêm prontos).
 - É leve: cerca de 15% de um núcleo do processador e 250 MB de memória com 3 janelas abertas.
 - **Loja:** dê o nome **Loja** à janela do personagem que vende e deixe o Gremory Case aberto na aba

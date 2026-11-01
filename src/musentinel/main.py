@@ -95,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(sys.argv[:1])
     app.setApplicationName("MU Sentinel")
     app.setQuitOnLastWindowClosed(False)
+    from .gui import theme
+
+    theme.apply(app)
     if mutex is None:
         QMessageBox.information(None, "MU Sentinel", "O MU Sentinel já está aberto (veja o ícone na bandeja).")
         return 0

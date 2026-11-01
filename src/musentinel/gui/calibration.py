@@ -445,6 +445,9 @@ class CalibrationWindow(QMainWindow):
 def main() -> int:
     winapi.enable_dpi_awareness()
     app = QApplication(sys.argv[:1])
+    from . import theme
+
+    theme.apply(app)
     w = CalibrationWindow()
     w.resize(1500, 900)
     w.show()

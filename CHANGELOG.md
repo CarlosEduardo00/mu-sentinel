@@ -1,5 +1,23 @@
 # Novidades do MU Sentinel
 
+## [0.2.4] - 2026-11-01
+
+### Visual novo
+- **Ícone novo**: um escudo com um olho, na barra de tarefas, na bandeja e no programa.
+- **O ícone da bandeja mostra como estão as janelas** com uma bolinha: 🟢 tudo certo, 🟡 atenção,
+  🔴 alerta, ⚪ alertas pausados. Passe o mouse por cima para ler o resumo. Com alerta aberto, o ícone da
+  barra de tarefas também ganha a bolinha vermelha.
+- **Resumo no topo do app**: "Tudo certo · 3 janelas" ou "1 alerta: Crusader MORTO", com o botão
+  **OK, vi o alerta** do lado.
+- **Quadros das janelas mais fáceis de ler**: nome do personagem em destaque, barra de HP colorida,
+  faixa com a cor do estado e borda vermelha quando tem alerta. Linhas sem informação somem.
+- Botões **Pausar alertas**, **Testar alertas** e **Configurações** sempre à vista no topo.
+- O rodapé mostra para onde os alertas vão (Telegram, WhatsApp, Windows) e se o monitor está rodando.
+- O botão direito no ícone da bandeja também testa os alertas e abre as Configurações.
+- Acompanha o tema claro ou escuro do Windows.
+- "Slot" virou **janela** em todas as telas; a aba Eventos virou **Histórico**.
+- Novo menu *Ajuda → Manual de uso*, que abre o manual no navegador.
+
 ## [0.2.3] - 2026-11-01
 
 ### Novo

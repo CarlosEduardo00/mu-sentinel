@@ -29,7 +29,7 @@ class SlotsPage(QWizardPage):
         super().__init__()
         self.wiz = wiz
         self.setTitle("1. Janelas do jogo")
-        self.setSubTitle("Abra os clients do MU que você quer monitorar (até 4) e dê um nome a cada slot. "
+        self.setSubTitle("Abra os clients do MU que você quer monitorar (até 4) e dê um nome a cada janela. "
                          "O nome aparece nos alertas.")
         v = QVBoxLayout(self)
         v.addWidget(shop_hint_label())
@@ -83,7 +83,7 @@ class SlotsPage(QWizardPage):
             bv = QVBoxLayout(box)
             bv.addWidget(thumb)
             name = QLineEdit(self.wiz.cfg.slot_name(slot))
-            bv.addWidget(QLabel(f"Slot {slot}"))
+            bv.addWidget(QLabel(f"Janela {slot}"))
             bv.addWidget(name)
             tag = QLabel()
             tag.setStyleSheet("color:#b26a00;")
