@@ -57,6 +57,10 @@ Step "Soma de conferência (SHA-256)"
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot "$zip.sha256"), "$hash  $zip`n")
 Write-Host "$hash  $zip"
+# Cópia com nome fixo: o botão do README (releases/latest/download/MUSentinel-win64.zip) sempre baixa a mais nova.
+# O app continua usando o arquivo com a versão no nome.
+$fixed = "MUSentinel-win64.zip"
+Copy-Item $zip $fixed -Force
 
 Step "Tag $tag e envio para o GitHub"
 git tag -a $tag -m "MU Sentinel $version"; Check "git tag"
@@ -64,11 +68,11 @@ git push origin main; Check "git push"
 git push origin $tag; Check "git push da tag"
 
 Step "Release no GitHub"
-$ghArgs = @("release", "create", $tag, $zip, "$zip.sha256", "--title", "MU Sentinel $version",
+$ghArgs = @("release", "create", $tag, $zip, "$zip.sha256", $fixed, "--title", "MU Sentinel $version",
             "--notes-file", $notesFile, "--verify-tag")
 if ($Rascunho) { $ghArgs += "--draft" }
 gh @ghArgs; Check "gh release create"
-Remove-Item $notesFile -ErrorAction SilentlyContinue
+Remove-Item $notesFile, $fixed -ErrorAction SilentlyContinue
 
 $url = gh release view $tag --json url --jq .url
 Write-Host "`nPronto: $url" -ForegroundColor Green
